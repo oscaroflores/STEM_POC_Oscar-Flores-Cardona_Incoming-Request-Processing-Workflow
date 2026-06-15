@@ -53,7 +53,7 @@ def init_db() -> None:
 
 
 def record(pr: ProcessedRequest) -> None:
-    j, r, req = pr.judgment, pr.remediation, pr.request
+    t, r, req = pr.type_decision, pr.remediation, pr.request
     with _conn() as conn:
         conn.execute(
             """INSERT INTO audit_log (
@@ -65,8 +65,8 @@ def record(pr: ProcessedRequest) -> None:
             ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
             (
                 req.id, pr.processed_at, req.channel, req.member_name, req.body,
-                j.type.value, j.urgency.value, j.confidence, j.language.value,
-                int(j.clinical_flag), int(j.phi_present), j.rationale, j.source,
+                t.type.value, t.urgency.value, t.confidence, t.language.value,
+                int(t.clinical_flag), int(t.phi_present), t.rationale, t.source,
                 r.assigned_team, int(r.requires_human_review),
                 r.escalation_reason,
                 json.dumps([a.model_dump() for a in r.actions]),

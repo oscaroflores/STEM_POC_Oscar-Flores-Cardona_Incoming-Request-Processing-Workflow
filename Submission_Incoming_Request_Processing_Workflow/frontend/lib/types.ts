@@ -16,7 +16,7 @@ export type IncomingRequest = {
   body: string;
 };
 
-export type Judgment = {
+export type TypeDecision = {
   type: RequestType;
   urgency: Urgency;
   confidence: number;
@@ -48,7 +48,7 @@ export type RemediationResult = {
 
 export type ProcessedRequest = {
   request: IncomingRequest;
-  judgment: Judgment;
+  type_decision: TypeDecision;
   remediation: RemediationResult;
   processed_at: string;
 };
@@ -64,8 +64,8 @@ export type DashboardSummary = {
 
 export type HealthStatus = {
   status: string;
-  live_model_enabled: boolean;
-  model_id: string | null;
+  classifier_mode: string;
+  model_id: string;
   confidence_threshold: number;
 };
 

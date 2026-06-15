@@ -58,7 +58,7 @@ export function AdHocRequestForm({ onSubmitRequest }: AdHocRequestFormProps) {
         body: form.body,
       };
       const result = await onSubmitRequest(request);
-      setStatus(`Processed as ${result.judgment.type.replace(/_/g, " ")} with ${Math.round(result.judgment.confidence * 100)}% confidence.`);
+      setStatus(`Processed as ${result.type_decision.type.replace(/_/g, " ")} with ${Math.round(result.type_decision.confidence * 100)}% confidence.`);
       setForm({ channel: "web_form", member_name: "", subject: "", body: "" });
     } catch (error) {
       setStatus(error instanceof Error ? error.message : "Unable to process request.");

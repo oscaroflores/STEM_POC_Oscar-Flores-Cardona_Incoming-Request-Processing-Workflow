@@ -191,7 +191,7 @@ export function OperationsConsole() {
               </div>
 
               <div className="flex flex-wrap items-center gap-2">
-                <Badge variant={health?.live_model_enabled ? "success" : "warning"}>{health?.live_model_enabled ? "Bedrock primary" : "Fallback ready"}</Badge>
+                <Badge variant="success">Bedrock AI only</Badge>
                 <Button type="button" size="sm" onClick={startStream} disabled={isStreaming}>
                   <Play className="h-4 w-4" />
                   Run
@@ -409,7 +409,7 @@ function OutcomeNode({
               >
                 <div className="flex items-center justify-between gap-2 text-xs">
                   <span className="truncate font-medium">{item.request.subject}</span>
-                  <span className="shrink-0 text-muted-foreground">{formatPercent(item.judgment.confidence)}</span>
+                  <span className="shrink-0 text-muted-foreground">{formatPercent(item.type_decision.confidence)}</span>
                 </div>
                 <div className="mt-1 flex items-center gap-2 text-[11px] text-muted-foreground">
                   <Activity className="h-3 w-3" />
@@ -441,7 +441,7 @@ function getNodeItems(processed: ProcessedRequest[], type: RequestType | "human_
   if (type === "human_review") {
     return processed.filter((item) => item.remediation.requires_human_review);
   }
-  return processed.filter((item) => item.judgment.type === type);
+  return processed.filter((item) => item.type_decision.type === type);
 }
 
 function upsertProcessed(current: ProcessedRequest[], next: ProcessedRequest) {

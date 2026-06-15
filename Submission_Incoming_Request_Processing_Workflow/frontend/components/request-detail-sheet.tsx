@@ -55,16 +55,16 @@ export function RequestDetailSheet({ request, open, onOpenChange, onOverride, ov
     }
   }
 
-  const entities = Object.entries(request.judgment.key_entities ?? {});
+  const entities = Object.entries(request.type_decision.key_entities ?? {});
 
   return (
     <Sheet open={open} onOpenChange={onOpenChange}>
       <SheetContent className="flex flex-col overflow-hidden p-0 sm:max-w-2xl">
         <SheetHeader className="border-b bg-card px-6 py-5">
           <div className="mb-2 flex flex-wrap gap-2">
-            <TypeBadge type={request.judgment.type} />
-            <UrgencyBadge urgency={request.judgment.urgency} />
-            <LanguageBadge language={request.judgment.language} />
+            <TypeBadge type={request.type_decision.type} />
+            <UrgencyBadge urgency={request.type_decision.urgency} />
+            <LanguageBadge language={request.type_decision.language} />
             {request.remediation.requires_human_review ? <Badge variant="destructive">Human review</Badge> : null}
           </div>
           <SheetTitle>{request.request.subject}</SheetTitle>
@@ -91,14 +91,14 @@ export function RequestDetailSheet({ request, open, onOpenChange, onOverride, ov
               <div className="rounded-lg border bg-card p-4">
                 <div className="mb-3 flex items-center justify-between text-sm">
                   <span className="text-muted-foreground">Confidence</span>
-                  <span className="font-semibold">{formatPercent(request.judgment.confidence)}</span>
+                  <span className="font-semibold">{formatPercent(request.type_decision.confidence)}</span>
                 </div>
-                <Progress value={request.judgment.confidence * 100} />
-                <p className="mt-4 text-sm leading-6 text-muted-foreground">{request.judgment.rationale}</p>
+                <Progress value={request.type_decision.confidence * 100} />
+                <p className="mt-4 text-sm leading-6 text-muted-foreground">{request.type_decision.rationale}</p>
                 <div className="mt-4 grid grid-cols-1 gap-3 text-sm sm:grid-cols-2">
-                  <Info label="Classifier source" value={request.judgment.source} />
-                  <Info label="PHI present" value={request.judgment.phi_present ? "Yes" : "No"} />
-                  <Info label="Clinical flag" value={request.judgment.clinical_flag ? "Yes" : "No"} />
+                  <Info label="Classifier source" value={request.type_decision.source} />
+                  <Info label="PHI present" value={request.type_decision.phi_present ? "Yes" : "No"} />
+                  <Info label="Clinical flag" value={request.type_decision.clinical_flag ? "Yes" : "No"} />
                   <Info label="Processed at" value={formatDate(request.processed_at)} />
                 </div>
                 {entities.length ? (

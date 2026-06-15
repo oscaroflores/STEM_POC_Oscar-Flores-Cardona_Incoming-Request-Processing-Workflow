@@ -2,7 +2,7 @@
 Conductor API — FastAPI backend for the autonomous AI intake manager.
 
 Endpoints
-  GET  /health                 - liveness + whether the live model is enabled
+  GET  /health                 - liveness + active classifier mode
   GET  /api/inbox              - the seeded sample inbox (mixed ES/EN requests)
   POST /api/process            - process one ad-hoc request, return full result
   GET  /api/process-stream     - SSE: drain the inbox one-by-one, live
@@ -53,8 +53,8 @@ def _load_inbox() -> list[IncomingRequest]:
 def health() -> dict:
     return {
         "status": "ok",
-        "live_model_enabled": config.USE_BEDROCK,
-        "model_id": config.BEDROCK_MODEL_ID if config.USE_BEDROCK else None,
+        "classifier_mode": "bedrock_ai_only",
+        "model_id": config.BEDROCK_MODEL_ID,
         "confidence_threshold": config.CONFIDENCE_THRESHOLD,
     }
 

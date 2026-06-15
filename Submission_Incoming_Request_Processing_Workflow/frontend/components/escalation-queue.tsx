@@ -30,10 +30,10 @@ export function EscalationQueue({ items, onSelect }: EscalationQueueProps) {
                   <div className="text-sm font-semibold">{item.request.subject}</div>
                   <div className="text-xs text-muted-foreground">{item.request.id} · {item.request.member_name || "Member"}</div>
                 </div>
-                <Badge variant="destructive">{formatPercent(item.judgment.confidence)}</Badge>
+                <Badge variant="destructive">{formatPercent(item.type_decision.confidence)}</Badge>
               </div>
               <p className="line-clamp-2 text-xs leading-5 text-muted-foreground">
-                {item.remediation.escalation_reason || item.judgment.rationale}
+                {item.remediation.escalation_reason || item.type_decision.rationale}
               </p>
               <Button type="button" variant="outline" size="sm" className="mt-3 w-full" onClick={() => onSelect(item)}>
                 Review handoff

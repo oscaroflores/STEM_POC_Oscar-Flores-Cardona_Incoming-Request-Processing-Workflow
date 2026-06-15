@@ -11,7 +11,7 @@ clinical or anything it isn't confident about, sending those to a human instead.
 
 > **Design thesis: _AI reasons, rules act._**
 > The model does exactly one job — read a request and emit a structured
-> judgment. A deterministic engine does everything else: routing, drafting,
+> request type. A deterministic workflow engine does everything else: routing, drafting,
 > logging. That separation is what makes every automated action explainable,
 > auditable, and safe — the qualities a healthcare operation actually needs.
 
@@ -27,7 +27,7 @@ volume, with uncertainty made visible and humans kept in control.
 Two safety gates can override the manager's routing:
 
 1. **Clinical gate** — any request mentioning symptoms, medication, or anything
-   needing clinical judgment is never auto-resolved or routed to a standard
+   needing clinical decision-making is never auto-resolved or routed to a standard
    queue. It goes to a human supervisor with a neutral, non-clinical
    acknowledgement. The AI never gives medical advice.
 2. **Confidence gate** — any classification below the configured threshold
@@ -51,10 +51,9 @@ clinical or treatment language — consistent and compliant by construction.
 ```
 Inbox ─▶ Orchestrator (autonomous, one request at a time)
             │
-            ├─▶ classify()      → Judgment {type, urgency, confidence,
-            │   (Bedrock AI;       language, clinical_flag, phi_present,
-            │    rule-layer         rationale, key_entities}
-            │    fallback)
+            ├─▶ classify()      → type_decision {type, urgency, confidence,
+            │   (Bedrock AI only)  language, clinical_flag, phi_present,
+            │                      rationale, key_entities}
             │
             ├─▶ safety gates    → clinical? low-confidence? → force human review
             │
@@ -64,19 +63,16 @@ Inbox ─▶ Orchestrator (autonomous, one request at a time)
             └─▶ audit.record()  → append-only SQLite compliance log
 ```
 
-The classifier has two implementations behind one contract (`Judgment`): the
-**primary** path is a live **Bedrock** call (`boto3` Converse API, model-agnostic,
-structured JSON) — AI classifies every request, as the brief requires. A
-**deterministic** keyword/heuristic classifier sits behind it as a *resilience
-fallback*: it fires **only** if the live model errors or times out, so a
-healthcare queue never stalls during a model outage. Every fallback is flagged
-in the judgment's rationale, so it is visible in the audit trail rather than
-hidden. AI classification is the default mode; the fallback is business
-continuity, not the normal path.
+The classifier has one implementation behind the `type_decision` contract: a
+live **Bedrock** call (`boto3` Converse API, model-agnostic, structured JSON).
+AI classifies every request, as the brief requires. If the model is unavailable
+or returns invalid output, the API surfaces the failure instead of substituting
+keyword heuristics. That keeps classification provenance honest for the demo and
+for audit review.
 
 ## Run it
 
-AI classification (Bedrock) is the default mode. Configure AWS credentials and:
+AI classification through Bedrock is required. Configure AWS credentials and:
 
 ```bash
 cd Submission_Incoming_Request_Processing_Workflow
@@ -87,14 +83,14 @@ uvicorn main:app --reload --port 8000
 ```
 
 Cheap, fast, JSON-reliable models are preferred — the model's only job is the
-structured judgment, so classification reliability matters more than raw power.
+structured request type, so classification reliability matters more than raw power.
 Bedrock model access must be enabled in your account/region.
 
 Endpoints:
 
 | Endpoint | Purpose |
 | --- | --- |
-| `GET /health` | liveness + whether the live model is enabled |
+| `GET /health` | liveness + active classifier mode/model id |
 | `GET /api/inbox` | the seeded bilingual sample inbox |
 | `GET /api/process-stream` | **SSE** — autonomously drain the inbox, live |
 | `POST /api/process` | process one ad-hoc request |
@@ -126,43 +122,35 @@ UI coverage:
   language, rationale, branch actions, assigned team, SLA/follow-up, generated
   draft response, and escalation reason.
 - Operations dashboard with processed volume, urgency mix, type mix, pending
-  human review count, average confidence, backend health, and classifier mode.
+  human review count, average confidence, backend health, and AI classifier mode.
 - Escalations / needs-review queue for clinical and low-confidence cases.
 - Management override control calling `POST /api/override`.
 - Ad-hoc request form calling `POST /api/process`, including demo shortcuts for
   Spanish benefits, clinical escalation, and billing dispute examples.
 
-## Resilience fallback (offline / model-outage mode)
+## AI classification requirement
 
-If the live model errors or times out, the system automatically falls back to a
-deterministic rule layer so the queue keeps moving — and flags the fallback in
-each affected request's rationale. To force this mode (e.g. a no-credentials dry
-run or to demonstrate business continuity):
-
-```bash
-export CONDUCTOR_USE_BEDROCK=0
-uvicorn main:app --reload --port 8000
-```
-
-This is a safeguard, not the normal path: by default the system classifies with
-AI.
+There is no offline deterministic classifier. Processing requires Bedrock model
+access in the configured AWS account and region. Model errors, credential issues,
+or invalid JSON responses should be treated as operational failures to fix before
+the demo, not silently hidden behind heuristic routing.
 
 ## Configuration
 
 All tunables live in `config.py` (env-overridable): `CONDUCTOR_CONF_THRESHOLD`,
-`CONDUCTOR_PROCESS_DELAY` (demo pacing), `CONDUCTOR_MODEL_ID`, `CONDUCTOR_DB_PATH`.
+`CONDUCTOR_PROCESS_DELAY` (demo pacing), `CONDUCTOR_MODEL_ID`,
+`CONDUCTOR_LLM_TIMEOUT`, `CONDUCTOR_DB_PATH`.
 
 ## Verification status
 
-The full pipeline (routing, branches, gates, audit, SSE) was verified end-to-end
-in the offline build environment using the **resilience fallback** classifier
-(no AWS credentials available there): all 12 sample requests process, all five
-branches fire, both languages classify correctly, both safety gates trigger
-(clinical: REQ-1005/1011; low-confidence: REQ-1008), the SSE stream emits
-per-request decisions + live dashboard, and the audit log is written and
-queryable. **The primary Bedrock AI path is env-gated and must still be tested
-with live AWS credentials** before the demo (confirm model id, region, and JSON
-reliability under the chosen model).
+The deterministic remediation pipeline (branches, gates, audit, SSE envelope)
+has been verified structurally in the local build environment. Full end-to-end
+request processing now requires live Bedrock credentials because classification
+is AI-only. Before recording the demo, run the 12-request sample inbox with the
+target model and confirm all five branches fire, both languages classify
+correctly, both safety gates trigger (clinical: REQ-1005/1011; low-confidence:
+REQ-1008), the SSE stream emits per-request decisions + live dashboard, and the
+audit log is written and queryable.
 
 ## Sample data
 

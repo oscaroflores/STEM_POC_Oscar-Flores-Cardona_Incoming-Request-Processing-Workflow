@@ -92,7 +92,7 @@ The system can support more than four branches, but do not add complexity that w
 The project has moved beyond the original default suggestion. The current implementation is:
 
 - Python/FastAPI backend for the workflow API.
-- Bedrock AI as the primary classifier, with deterministic fallback only on model error/timeout.
+- Bedrock AI as the only classifier; no deterministic classifier fallback.
 - SQLite audit log for classification decisions, routing actions, generated drafts, and escalation flags.
 - Bilingual JSON sample inbox with synthetic Spanish/English requests.
 - Standalone Next.js App Router frontend in `Submission_Incoming_Request_Processing_Workflow/frontend/`.
@@ -202,10 +202,10 @@ Before claiming completion:
 - Confirm the README setup steps are accurate.
 - Confirm the deck or deck outline matches the required five-slide structure.
 - Confirm no real patient data or proprietary data is included.
-- Document any feature that depends on an optional API key or external service.
+- Document any feature that depends on an API key, model access, or external service.
 - Confirm git status is clean or only contains intentionally uncommitted artifacts before packaging.
 
-If something cannot be verified, state the gap plainly and prefer a reliable offline fallback over a fragile live dependency.
+If something cannot be verified, state the gap plainly and do not hide AI/model failures behind heuristic classification.
 
 ## Timeline
 

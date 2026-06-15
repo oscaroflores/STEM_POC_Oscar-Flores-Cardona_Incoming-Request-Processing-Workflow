@@ -5,11 +5,11 @@ import classifier
 
 
 def process_one(request: IncomingRequest) -> ProcessedRequest:
-    judgment = classifier.classify(f"{request.subject}\n\n{request.body}")
-    remediation = branches.remediate(request.id, judgment, request.member_name)
+    type_decision = classifier.classify(f"{request.subject}\n\n{request.body}")
+    remediation = branches.remediate(request.id, type_decision, request.member_name)
     processed = ProcessedRequest(
         request=request,
-        judgment=judgment,
+        type_decision=type_decision,
         remediation=remediation,
     )
     audit.record(processed)

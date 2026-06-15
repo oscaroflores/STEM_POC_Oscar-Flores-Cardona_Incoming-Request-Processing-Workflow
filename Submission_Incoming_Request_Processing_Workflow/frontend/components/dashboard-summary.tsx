@@ -46,8 +46,8 @@ export function DashboardSummary({ dashboard, health, isStreaming }: DashboardSu
             <span className="font-medium">{health?.status === "ok" ? "Connected" : "Waiting"}</span>
           </div>
           <div className="flex items-center justify-between gap-3">
-            <span className="text-muted-foreground">Live AI</span>
-            <span className="font-medium">{health?.live_model_enabled ? "Bedrock primary" : "Fallback mode"}</span>
+            <span className="text-muted-foreground">Classifier</span>
+            <span className="font-medium">{health?.classifier_mode === "bedrock_ai_only" ? "Bedrock AI only" : "Waiting"}</span>
           </div>
           <div className="flex items-center justify-between gap-3">
             <span className="text-muted-foreground">Stream</span>

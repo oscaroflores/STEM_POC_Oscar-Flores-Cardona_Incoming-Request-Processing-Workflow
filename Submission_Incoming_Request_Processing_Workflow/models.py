@@ -32,7 +32,7 @@ class IncomingRequest(BaseModel):
     body: str
 
 
-class Judgment(BaseModel):
+class TypeDecision(BaseModel):
     type: RequestType
     urgency: Urgency
     confidence: float = Field(ge=0, le=1)
@@ -64,7 +64,7 @@ class RemediationResult(BaseModel):
 
 class ProcessedRequest(BaseModel):
     request: IncomingRequest
-    judgment: Judgment
+    type_decision: TypeDecision
     remediation: RemediationResult
     processed_at: str = Field(
         default_factory=lambda: datetime.now(timezone.utc).isoformat()

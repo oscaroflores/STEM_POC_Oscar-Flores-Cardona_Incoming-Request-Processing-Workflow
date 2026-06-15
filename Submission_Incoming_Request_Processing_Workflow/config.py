@@ -2,21 +2,17 @@
 Central configuration for Conductor.
 
 Everything that controls behavior in a demo vs. a real deployment lives here so
-that the rest of the codebase has no magic numbers. The Bedrock integration is
-gated entirely behind environment variables: with no AWS credentials configured,
-the system runs on its deterministic classifier and is fully demoable offline.
+that the rest of the codebase has no magic numbers. Classification requires
+Bedrock model access; there is no deterministic classifier fallback.
 """
 
 import os
 
 
-# --- Bedrock / LLM integration (optional, env-gated) ------------------------
-# AI classification is the DEFAULT and intended mode (the brief requires AI to
-# classify each request). The deterministic rule layer is a RESILIENCE FALLBACK
-# that only fires if the live model errors or times out, so a healthcare queue
-# never stalls on a model hiccup. Set CONDUCTOR_USE_BEDROCK=0 only to force the
-# offline fallback (e.g. for a no-credentials dry run).
-USE_BEDROCK: bool = os.getenv("CONDUCTOR_USE_BEDROCK", "1") == "1"
+# --- Bedrock / LLM integration ---------------------------------------------
+# AI classification is required by design. Bedrock failures surface to the API
+# and should be fixed or handled by a human operator; they are not masked by a
+# keyword classifier.
 AWS_REGION: str = os.getenv("AWS_REGION", "us-east-1")
 
 # Model id is swappable. Cheap, fast, JSON-reliable models are preferred for the
@@ -28,8 +24,6 @@ BEDROCK_MODEL_ID: str = os.getenv(
     "CONDUCTOR_MODEL_ID", "amazon.nova-lite-v1:0"
 )
 
-# If the live model call fails or times out, fall back to the deterministic
-# classifier rather than breaking the run. Healthcare ops cannot stall.
 BEDROCK_TIMEOUT_SECONDS: float = float(os.getenv("CONDUCTOR_LLM_TIMEOUT", "12"))
 
 

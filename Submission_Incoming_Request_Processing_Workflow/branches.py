@@ -1,7 +1,7 @@
 """
 Remediation branches — where "rules act."
 
-Each branch is a deterministic function that turns a Judgment into a complete
+Each branch is a deterministic function that turns a TypeDecision into a complete
 handoff package: which team gets it, what ordered steps were taken, a draft
 acknowledgement in the member's language, and any SLA / follow-up markers.
 
@@ -15,7 +15,7 @@ Design principles enforced here:
 """
 
 from models import (
-    Judgment, RemediationResult, Action, RequestType, Language,
+    TypeDecision, RemediationResult, Action, RequestType, Language,
 )
 from teams import team
 from safety import gate_check
@@ -122,7 +122,7 @@ def _draft_escalation(member, lang):
 # Branch handlers
 # --------------------------------------------------------------------------- #
 
-def _complaint(j: Judgment, member) -> RemediationResult:
+def _complaint(j: TypeDecision, member) -> RemediationResult:
     ref = f"CMP-{j.key_entities.get('account_ref', '0000')}"
     return RemediationResult(
         request_id="", branch=RequestType.COMPLAINT, urgency=j.urgency,
@@ -138,7 +138,7 @@ def _complaint(j: Judgment, member) -> RemediationResult:
     )
 
 
-def _benefits(j: Judgment, member) -> RemediationResult:
+def _benefits(j: TypeDecision, member) -> RemediationResult:
     return RemediationResult(
         request_id="", branch=RequestType.BENEFITS_ENQUIRY, urgency=j.urgency,
         assigned_team=team("benefits_team").name,
@@ -153,7 +153,7 @@ def _benefits(j: Judgment, member) -> RemediationResult:
     )
 
 
-def _service(j: Judgment, member) -> RemediationResult:
+def _service(j: TypeDecision, member) -> RemediationResult:
     return RemediationResult(
         request_id="", branch=RequestType.SERVICE_REQUEST, urgency=j.urgency,
         assigned_team=team("scheduling").name,
@@ -168,7 +168,7 @@ def _service(j: Judgment, member) -> RemediationResult:
     )
 
 
-def _billing(j: Judgment, member) -> RemediationResult:
+def _billing(j: TypeDecision, member) -> RemediationResult:
     ref = f"BIL-{j.key_entities.get('account_ref', '0000')}"
     return RemediationResult(
         request_id="", branch=RequestType.BILLING_DISPUTE, urgency=j.urgency,
@@ -184,7 +184,7 @@ def _billing(j: Judgment, member) -> RemediationResult:
     )
 
 
-def _escalation(j: Judgment, member, reason: str) -> RemediationResult:
+def _escalation(j: TypeDecision, member, reason: str) -> RemediationResult:
     return RemediationResult(
         request_id="", branch=RequestType.CLINICAL_URGENT, urgency=j.urgency,
         assigned_team=team("human_review").name,
@@ -208,15 +208,15 @@ _BRANCH_MAP = {
 }
 
 
-def remediate(request_id: str, judgment: Judgment, member: str | None) -> RemediationResult:
+def remediate(request_id: str, type_decision: TypeDecision, member: str | None) -> RemediationResult:
     """
     Apply safety gates first, then route to the type-specific branch.
     A fired gate overrides the predicted type and forces the escalation branch.
     """
-    force_human, reason = gate_check(judgment)
+    force_human, reason = gate_check(type_decision)
     if force_human:
-        result = _escalation(judgment, member, reason or "Routed to human review.")
+        result = _escalation(type_decision, member, reason or "Routed to human review.")
     else:
-        result = _BRANCH_MAP[judgment.type](judgment, member)
+        result = _BRANCH_MAP[type_decision.type](type_decision, member)
     result.request_id = request_id
     return result

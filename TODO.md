@@ -11,12 +11,11 @@ Legend: `[x]` done · `[ ]` todo · `[~]` partial · `[?]` decision needed
 
 ## ✅ Done
 
-- [x] Backend engine: classifier (Bedrock + deterministic fallback), 5 branches, 2 safety gates, audit log, orchestrator
+- [x] Backend engine: Bedrock AI classifier, 5 branches, 2 safety gates, audit log, orchestrator
 - [x] FastAPI API incl. live SSE inbox-draining stream
 - [x] Bilingual sample inbox (12 requests, all branches + clinical + low-confidence edge cases)
 - [x] README v1 (thesis, architecture, branch table, run instructions)
-- [x] Backend verified end-to-end on resilience-fallback classifier
-- [x] **AI set as the default/primary classifier** (Bedrock on by default); deterministic rule layer reframed as a resilience fallback that only fires on model error/timeout and is flagged in the audit trail — aligns with the brief's "must use AI to classify" requirement
+- [x] Deterministic classifier removed; classification is Bedrock AI-only to align with the brief's "must use AI to classify" requirement
 - [x] Standalone **Next.js operations UI** created in `Submission_Incoming_Request_Processing_Workflow/frontend/`
 - [x] Frontend checks passed: `npm run typecheck`, `npm run build`, `npm audit --omit=dev`
 - [x] README updated with frontend setup and UI coverage notes
@@ -45,7 +44,7 @@ Legend: `[x]` done · `[ ]` todo · `[~]` partial · `[?]` decision needed
   - [ ] S1 — Problem Understanding & Objective
   - [ ] S2 — Solution Architecture & Design Flow (incl. classification + branch diagram)
   - [ ] S3 — Implementation Highlights (AI-reasons/rules-act, gates, code/UI screenshots)
-  - [ ] S4 — Challenges & Learnings (reliability, fallback, human oversight trade-offs)
+  - [ ] S4 — Challenges & Learnings (reliability, model dependency, human oversight trade-offs)
   - [ ] S5 — Demo Summary & Next Steps (links + enhancements)
 - [ ] Create the architecture/branch diagram asset for S2
 - [ ] Demo script / walkthrough outline (business-story framing, < 3 min)
@@ -65,8 +64,8 @@ Legend: `[x]` done · `[ ]` todo · `[~]` partial · `[?]` decision needed
 ## Decisions needed `[?]`
 
 - [?] **LLM-generated drafts vs. templated drafts** — currently templated (safe/consistent). Decide whether to optionally have Bedrock generate acknowledgements for a stronger demo.
-- [x] ~~**Live Bedrock in the demo** vs. deterministic~~ — RESOLVED: AI (Bedrock) is now the default classifier; deterministic is the resilience fallback. Record the demo with the live model on. (Live-path test still tracked under Blockers.)
-- [?] **Product name** — "Conductor" is a placeholder; confirm or rename.
+- [x] ~~**Live Bedrock in the demo** vs. deterministic~~ — RESOLVED: classification is Bedrock AI-only. Record the demo with the live model on. (Live-path test still tracked under Blockers.)
+- [X] **Product name** — "Conductor" is a placeholder; confirm or rename.
 - [?] **Hosting** — local-only (matches the "runs on local compute / data stays on-prem" privacy story) vs. deploy a hosted link for judges.
 
 ## Blockers / external dependencies

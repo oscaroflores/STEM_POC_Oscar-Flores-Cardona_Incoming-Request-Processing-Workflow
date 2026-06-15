@@ -59,16 +59,16 @@ export function RequestCard({ request, processed, state, onClick }: RequestCardP
         {processed ? (
           <div className="mt-4 space-y-3 border-t pt-3">
             <div className="flex flex-wrap gap-2">
-              <TypeBadge type={processed.judgment.type} />
-              <UrgencyBadge urgency={processed.judgment.urgency} />
-              <LanguageBadge language={processed.judgment.language} />
+              <TypeBadge type={processed.type_decision.type} />
+              <UrgencyBadge urgency={processed.type_decision.urgency} />
+              <LanguageBadge language={processed.type_decision.language} />
             </div>
             <div className="flex items-center justify-between rounded-md bg-muted/65 px-2.5 py-2 text-xs">
               <span className="inline-flex items-center gap-1.5 text-muted-foreground">
                 <Bot className="h-3.5 w-3.5" />
                 Confidence
               </span>
-              <span className="font-semibold text-foreground">{formatPercent(processed.judgment.confidence)}</span>
+              <span className="font-semibold text-foreground">{formatPercent(processed.type_decision.confidence)}</span>
             </div>
           </div>
         ) : null}
