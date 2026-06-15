@@ -112,3 +112,27 @@ body {
 .animate-card-in {
   animation: card-in 240ms ease-out both;
 }
+
+.workflow-canvas-grid {
+  background:
+    radial-gradient(circle at 21% 45%, rgba(8, 122, 143, 0.12), transparent 19rem),
+    radial-gradient(circle at 76% 22%, rgba(11, 111, 179, 0.1), transparent 18rem),
+    linear-gradient(rgba(31, 35, 40, 0.045) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(31, 35, 40, 0.045) 1px, transparent 1px);
+  background-size: auto, auto, 34px 34px, 34px 34px;
+}
+
+@keyframes workflow-pulse {
+  0%,
+  100% {
+    box-shadow: 0 20px 60px rgba(8, 122, 143, 0.14);
+  }
+
+  50% {
+    box-shadow: 0 20px 76px rgba(8, 122, 143, 0.28);
+  }
+}
+
+.workflow-pulse {
+  animation: workflow-pulse 1.4s ease-in-out infinite;
+}

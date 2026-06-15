@@ -2,7 +2,7 @@ import type { Metadata } from "next";
 import "./globals.css";
 
 export const metadata: Metadata = {
-  title: "Conductor Operations Console",
+  title: "Conductor Home",
   description: "AI intake workflow operations UI for the TeleMedik POC",
 };
 
