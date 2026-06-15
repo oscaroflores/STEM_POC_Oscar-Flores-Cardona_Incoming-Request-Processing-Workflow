@@ -17,8 +17,8 @@ judgment's rationale so it is visible in the audit trail.
 import json
 import re
 
-from .models import Judgment, RequestType, Urgency, Language
-from . import config
+from models import Judgment, RequestType, Urgency, Language
+import config
 
 
 # --------------------------------------------------------------------------- #

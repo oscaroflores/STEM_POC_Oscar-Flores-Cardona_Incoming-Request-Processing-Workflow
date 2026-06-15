@@ -47,8 +47,8 @@ PROCESS_DELAY_SECONDS: float = float(os.getenv("CONDUCTOR_PROCESS_DELAY", "1.1")
 # --- Storage ----------------------------------------------------------------
 DB_PATH: str = os.getenv(
     "CONDUCTOR_DB_PATH",
-    os.path.join(os.path.dirname(os.path.dirname(__file__)), "conductor_audit.db"),
+    os.path.join(os.path.dirname(__file__), "conductor_audit.db"),
 )
 SAMPLE_DATA_PATH: str = os.path.join(
-    os.path.dirname(os.path.dirname(__file__)), "data", "sample_requests.json"
+    os.path.dirname(__file__), "data", "sample_requests.json"
 )

@@ -79,11 +79,11 @@ continuity, not the normal path.
 AI classification (Bedrock) is the default mode. Configure AWS credentials and:
 
 ```bash
-cd backend
+cd Submission_Incoming_Request_Processing_Workflow
 pip install -r requirements.txt
 export AWS_REGION=us-east-1
 export CONDUCTOR_MODEL_ID=amazon.nova-lite-v1:0   # or claude-3-5-haiku, deepseek
-uvicorn app.main:app --reload --port 8000
+uvicorn main:app --reload --port 8000
 ```
 
 Cheap, fast, JSON-reliable models are preferred — the model's only job is the
@@ -141,6 +141,7 @@ run or to demonstrate business continuity):
 
 ```bash
 export CONDUCTOR_USE_BEDROCK=0
+uvicorn main:app --reload --port 8000
 ```
 
 This is a safeguard, not the normal path: by default the system classifies with
@@ -148,7 +149,7 @@ AI.
 
 ## Configuration
 
-All tunables live in `app/config.py` (env-overridable): `CONDUCTOR_CONF_THRESHOLD`,
+All tunables live in `config.py` (env-overridable): `CONDUCTOR_CONF_THRESHOLD`,
 `CONDUCTOR_PROCESS_DELAY` (demo pacing), `CONDUCTOR_MODEL_ID`, `CONDUCTOR_DB_PATH`.
 
 ## Verification status
@@ -165,7 +166,7 @@ reliability under the chosen model).
 
 ## Sample data
 
-`backend/data/sample_requests.json` — 12 synthetic bilingual requests covering
+`data/sample_requests.json` — 12 synthetic bilingual requests covering
 every branch plus clinical and low-confidence edge cases. No real or proprietary
 patient data is used.
 

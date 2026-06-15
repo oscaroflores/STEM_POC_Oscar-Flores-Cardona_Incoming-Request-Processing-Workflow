@@ -15,8 +15,8 @@ system "knows the limits of its authority":
 Either gate firing converts the case into a CLINICAL_URGENT / escalation branch.
 """
 
-from .models import Judgment
-from . import config
+from models import Judgment
+import config
 
 
 def gate_check(judgment: Judgment) -> tuple[bool, str | None]:

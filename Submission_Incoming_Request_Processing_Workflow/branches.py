@@ -14,11 +14,11 @@ Design principles enforced here:
     non-clinical acknowledgement only.
 """
 
-from .models import (
+from models import (
     Judgment, RemediationResult, Action, RequestType, Language,
 )
-from .teams import team
-from .safety import gate_check
+from teams import team
+from safety import gate_check
 
 
 def _name(member: str | None, lang: Language) -> str:
