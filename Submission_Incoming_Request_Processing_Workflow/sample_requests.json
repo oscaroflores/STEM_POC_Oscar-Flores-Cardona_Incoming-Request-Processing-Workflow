@@ -1,0 +1,86 @@
+[
+  {
+    "id": "REQ-1001",
+    "channel": "email",
+    "member_name": "Carlos Rivera",
+    "subject": "Esto es inaceptable",
+    "body": "Llevo tres semanas esperando respuesta y nadie me ha llamado. Esto es totalmente inaceptable y exijo hablar con un supervisor. Estoy muy molesto con el servicio. Mi cuenta es 884512."
+  },
+  {
+    "id": "REQ-1002",
+    "channel": "web_form",
+    "member_name": "Jennifer Smith",
+    "subject": "Coverage question",
+    "body": "Hi, does my plan cover an annual eye exam? I'm not sure if vision is included in my benefits or if I need a separate add-on. Thank you."
+  },
+  {
+    "id": "REQ-1003",
+    "channel": "email",
+    "member_name": "María González",
+    "subject": "Necesito una cita",
+    "body": "Buenos días, necesito agendar una cita de seguimiento con mi médico primario para la próxima semana. ¿Pueden ayudarme a coordinar la fecha?"
+  },
+  {
+    "id": "REQ-1004",
+    "channel": "email",
+    "member_name": "Robert Delgado",
+    "subject": "I was overcharged",
+    "body": "I was charged $245 on my last statement for a visit that should have been fully covered. This is a billing error and I want a refund. My account number is 773021."
+  },
+  {
+    "id": "REQ-1005",
+    "channel": "inbox",
+    "member_name": "Ana Torres",
+    "subject": "Ayuda urgente",
+    "body": "Tengo un dolor fuerte en el pecho desde esta mañana y me cuesta respirar. No sé qué hacer, por favor necesito ayuda."
+  },
+  {
+    "id": "REQ-1006",
+    "channel": "web_form",
+    "member_name": "David Kim",
+    "subject": "Reschedule",
+    "body": "I need to reschedule my appointment that was set for Thursday. Something came up at work. Can we move it to the following Monday?"
+  },
+  {
+    "id": "REQ-1007",
+    "channel": "email",
+    "member_name": "Luis Méndez",
+    "subject": "Cobro indebido",
+    "body": "Me cobraron $89 de copago que ya había pagado el mes pasado. Adjunto el recibo. Por favor revisen mi estado de cuenta, cuenta 556140, y procesen el reembolso."
+  },
+  {
+    "id": "REQ-1008",
+    "channel": "email",
+    "member_name": "Patricia Ruiz",
+    "subject": "?",
+    "body": "Hola, tengo una pregunta sobre algo. ¿Me pueden ayudar? Gracias."
+  },
+  {
+    "id": "REQ-1009",
+    "channel": "email",
+    "member_name": "Michael Brown",
+    "subject": "Terrible experience",
+    "body": "Your call center hung up on me twice today. This is the worst service I have ever received and I am furious. I want this complaint on record."
+  },
+  {
+    "id": "REQ-1010",
+    "channel": "web_form",
+    "member_name": "Sofía Ramírez",
+    "subject": "Beneficios de farmacia",
+    "body": "¿Mi plan cubre los medicamentos genéricos en la farmacia de la red? Quiero entender qué incluye mi cobertura de farmacia antes de mi próxima visita."
+  },
+  {
+    "id": "REQ-1011",
+    "channel": "inbox",
+    "member_name": "James Wilson",
+    "subject": "Med side effects",
+    "body": "Since starting my new prescription two days ago I've had dizziness and a rash. Is this a normal side effect or should I be worried? What should I do?"
+  },
+  {
+    "id": "REQ-1012",
+    "channel": "email",
+    "member_name": "Elena Vázquez",
+    "subject": "Nueva tarjeta",
+    "body": "Perdí mi tarjeta de identificación de miembro y necesito solicitar una nueva. ¿Cómo puedo hacer el trámite y cuánto tarda en llegar?"
+  }
+]
