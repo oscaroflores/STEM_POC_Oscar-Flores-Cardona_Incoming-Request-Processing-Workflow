@@ -104,9 +104,9 @@ No new dependencies should be added casually. If dependencies are needed, keep t
 
 ## Frontend UI Direction
 
-The operations UI should mimic the styling and information density of the Notion app:
+The operations UI should mimic the styling and information density of the Obsidian app:
 
-- Off-white workspace, thin borders, subdued shadows, rounded cards, dense database-like layout.
+- Off-white workspace, thin borders, subdued shadows, squared cards, dense database-like layout.
 - Left navigation/sidebar, main work board, and right operations panel.
 - Calm, readable typography and restrained motion.
 - Avoid flashy chatbot aesthetics, purple gradients, and generic SaaS dashboard styling.
@@ -142,6 +142,13 @@ Current UI status:
 - It includes the live inbox board, dashboard summary, escalation queue, detail sheet, management override form, and ad-hoc request form.
 - Frontend verification passed: `npm run typecheck`, `npm run build`, and `npm audit --omit=dev`.
 - Live frontend-to-backend verification still needs to be completed against a running API.
+
+Current repository status:
+
+- Git has been initialized at `proofofconceptpocstageinstructionsfirstsource/`.
+- Initial commit: `771e034 Initial Conductor POC implementation`.
+- Local scratch outputs are ignored via `.gitignore` (`.DS_Store`, OCR scratch folders, Python caches, local DBs, `node_modules`, `.next`, logs, env files, and TypeScript build cache).
+- A remote GitHub repository or hosted app link still needs to be created if chosen for the final submission package.
 
 ## Five-Slide Deck Structure
 
@@ -196,6 +203,7 @@ Before claiming completion:
 - Confirm the deck or deck outline matches the required five-slide structure.
 - Confirm no real patient data or proprietary data is included.
 - Document any feature that depends on an optional API key or external service.
+- Confirm git status is clean or only contains intentionally uncommitted artifacts before packaging.
 
 If something cannot be verified, state the gap plainly and prefer a reliable offline fallback over a fragile live dependency.
 

@@ -20,6 +20,7 @@ Legend: `[x]` done · `[ ]` todo · `[~]` partial · `[?]` decision needed
 - [x] Standalone **Next.js operations UI** created in `Submission_Incoming_Request_Processing_Workflow/frontend/`
 - [x] Frontend checks passed: `npm run typecheck`, `npm run build`, `npm audit --omit=dev`
 - [x] README updated with frontend setup and UI coverage notes
+- [x] Git repository initialized at project root with first commit `771e034 Initial Conductor POC implementation`
 
 ---
 
@@ -56,7 +57,7 @@ Legend: `[x]` done · `[ ]` todo · `[~]` partial · `[?]` decision needed
 - [~] Sample outputs/logs — verified in terminal; **need clean per-branch output screenshots or a saved log file** as an artifact
 - [~] Update README with frontend setup + screenshots once UI exists (setup added; screenshots still needed)
 - [ ] Add frontend screenshots or saved output artifacts to the final package
-- [ ] GitHub repo (push) and/or hosted app link
+- [~] GitHub repo (push) and/or hosted app link (local git repo initialized and committed; remote/published link still needed if selected)
 - [ ] Optional: workflow export note (n/a — custom code, document the repo instead)
 
 ---
@@ -89,4 +90,5 @@ Legend: `[x]` done · `[ ]` todo · `[~]` partial · `[?]` decision needed
 - [ ] Confirm deck matches the required 5-slide structure
 - [ ] Confirm no real/proprietary patient data anywhere
 - [ ] Document any feature depending on an optional API key
+- [ ] Confirm git status is clean or only contains intentionally uncommitted final artifacts
 - [ ] Assemble submission package + send email with correct subject/recipients
