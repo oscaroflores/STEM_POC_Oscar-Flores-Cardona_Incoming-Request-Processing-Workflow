@@ -17,3 +17,5 @@ out/
 .env
 .env.*
 !.env.example
+PoC-Options/
+*.md
