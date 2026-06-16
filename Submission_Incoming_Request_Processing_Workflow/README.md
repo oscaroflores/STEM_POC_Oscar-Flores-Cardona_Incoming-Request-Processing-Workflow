@@ -48,20 +48,21 @@ clinical or treatment language — consistent and compliant by construction.
 
 ## Architecture
 
-```
-Sample inbox / API / request factory ─▶ Inbox queue
-                                      └▶ Orchestrator (autonomous, one request at a time)
-            │
-            ├─▶ classify()      → type_decision {type, urgency, confidence,
-            │   (Bedrock AI only)  language, clinical_flag, phi_present,
-            │                      rationale, key_entities}
-            │
-            ├─▶ safety gates    → clinical? low-confidence? → force human review
-            │
-            ├─▶ remediate()     → branch-specific handoff package
-            │                      (team, ordered actions, bilingual draft, SLA)
-            │
-            └─▶ audit.record()  → SQLite case store + append-only audit log
+```mermaid
+flowchart TD
+    source["Sample inbox / API / request factory"] --> inbox["Inbox queue"]
+    inbox --> orchestrator["Orchestrator<br/>autonomous, one request at a time"]
+
+    orchestrator --> classify["classify()<br/>Bedrock AI only"]
+    classify --> decision["type_decision<br/>type, urgency, confidence<br/>language, clinical_flag, phi_present<br/>rationale, key_entities"]
+
+    decision --> gates{"Safety gates<br/>clinical or low confidence?"}
+    gates -->|Yes| human["Force human review"]
+    gates -->|No| remediate["remediate()<br/>branch-specific handoff package"]
+
+    human --> audit["audit.record()<br/>SQLite case store + append-only audit log"]
+    remediate --> outputs["Team routing, ordered actions<br/>bilingual draft, SLA/follow-up"]
+    outputs --> audit
 ```
 
 The classifier has one implementation behind the `type_decision` contract: a
@@ -160,8 +161,8 @@ docker compose --profile factory up --build
 
 Factory behavior:
 
-- Code chooses the request category and language with a seeded RNG.
-- Bedrock writes the actual synthetic member request for that chosen category.
+- Code chooses the request category, language, and inbound channel with a seeded RNG.
+- Bedrock writes the actual synthetic member request for those chosen attributes.
 - The worker posts to `POST /api/inbox`; it never writes SQLite directly.
 - The existing live board and `GET /api/process-stream` process generated items
   through the same classifier, remediation branches, and audit trail.
@@ -178,6 +179,7 @@ Useful factory environment variables:
 | `REQUEST_FACTORY_MODEL_ID` | `CONDUCTOR_MODEL_ID` | Optional separate Bedrock model for generation. |
 | `REQUEST_FACTORY_CATEGORY_WEIGHTS` | built-in balanced mix | Comma list such as `complaint=2,benefits_enquiry=3,service_request=3,billing_dispute=2,clinical_urgent=1`. |
 | `REQUEST_FACTORY_LANGUAGE_WEIGHTS` | `en=1,es=1` | Comma list such as `en=1,es=2`. |
+| `REQUEST_FACTORY_CHANNEL_WEIGHTS` | `email=2,inbox=2,web_form=1` | Comma list for simulated source/channel mix. |
 
 Example: generate 25 mostly Spanish requests, with 5-12 seconds between each:
 
@@ -186,6 +188,7 @@ REQUEST_FACTORY_MAX_REQUESTS=25 \
 REQUEST_FACTORY_MIN_INTERVAL_SECONDS=5 \
 REQUEST_FACTORY_MAX_INTERVAL_SECONDS=12 \
 REQUEST_FACTORY_LANGUAGE_WEIGHTS=en=1,es=3 \
+REQUEST_FACTORY_CHANNEL_WEIGHTS=email=2,inbox=2,web_form=1 \
 docker compose --profile factory up --build
 ```
 
@@ -196,6 +199,11 @@ If you prefer AWS access keys instead of a profile, export
 `AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY`, and optional `AWS_SESSION_TOKEN`
 before running Compose. Avoid editing rows in SQLite web while the SSE demo is
 actively processing requests.
+
+When using an AWS SSO profile, Compose mounts `~/.aws` read-write into the API
+and request factory containers so `botocore` can refresh files under
+`~/.aws/sso/cache`. If Bedrock calls fail with a read-only SSO cache error,
+restart the stack after confirming this mount is not marked `:ro`.
 
 Endpoints:
 

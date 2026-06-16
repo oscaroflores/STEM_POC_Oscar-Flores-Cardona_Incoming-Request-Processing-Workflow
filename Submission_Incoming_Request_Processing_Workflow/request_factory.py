@@ -1,10 +1,11 @@
 """
 Request Factory - opt-in synthetic inbox generator.
 
-The factory is a separate worker process. It chooses the request category and
-language with a seeded RNG, asks Bedrock to write a realistic synthetic member
-request for that category, then queues it through the Conductor API. It never
-writes SQLite directly, so the FastAPI service remains the single database owner.
+The factory is a separate worker process. It chooses the request category,
+language, and inbound channel with a seeded RNG, asks Bedrock to write a
+realistic synthetic member request for those attributes, then queues it through
+the Conductor API. It never writes SQLite directly, so the FastAPI service
+remains the single database owner.
 """
 
 import json
@@ -35,6 +36,12 @@ DEFAULT_CATEGORY_WEIGHTS = {
 DEFAULT_LANGUAGE_WEIGHTS = {
     "en": 1.0,
     "es": 1.0,
+}
+
+DEFAULT_CHANNEL_WEIGHTS = {
+    "email": 2.0,
+    "inbox": 2.0,
+    "web_form": 1.0,
 }
 
 CATEGORY_GUIDANCE = {
@@ -75,6 +82,7 @@ Rules:
 - Use only synthetic fictional data. Never include real people, real addresses,
   Social Security numbers, full dates of birth, or proprietary data.
 - Match the requested category and language exactly.
+- Match the requested inbound channel exactly.
 - Keep the body between 35 and 95 words.
 - Healthcare-safe: do not give medical advice, diagnosis, or treatment.
 - Spanish requests should sound natural for Puerto Rico without stereotypes.
@@ -154,6 +162,7 @@ def _generate_request(
     model_id: str,
     category: str,
     language: str,
+    channel: str,
     variation_seed: int,
     request_id: str,
 ) -> IncomingRequest:
@@ -161,6 +170,7 @@ def _generate_request(
 
 Category: {category}
 Language: {language}
+Inbound channel: {channel}
 Category guidance: {CATEGORY_GUIDANCE[category]}
 Variation seed: {variation_seed}
 
@@ -176,7 +186,7 @@ The generated request id will be {request_id}; do not include it in the JSON.
     data = _extract_json(raw)
     return IncomingRequest(
         id=request_id,
-        channel=str(data["channel"]),
+        channel=channel,
         member_name=data.get("member_name"),
         subject=str(data["subject"]),
         body=str(data["body"]),
@@ -225,6 +235,10 @@ def main() -> None:
         os.getenv("REQUEST_FACTORY_LANGUAGE_WEIGHTS"),
         DEFAULT_LANGUAGE_WEIGHTS,
     )
+    channel_weights = _parse_weights(
+        os.getenv("REQUEST_FACTORY_CHANNEL_WEIGHTS"),
+        DEFAULT_CHANNEL_WEIGHTS,
+    )
 
     rng = random.Random(seed)
     client = _client()
@@ -242,6 +256,7 @@ def main() -> None:
         counter += 1
         category = _weighted_choice(rng, category_weights)
         language = _weighted_choice(rng, language_weights)
+        channel = _weighted_choice(rng, channel_weights)
         variation_seed = rng.randint(1, 999_999)
         request_id = _factory_id(counter)
 
@@ -251,12 +266,13 @@ def main() -> None:
                 model_id=model_id,
                 category=category,
                 language=language,
+                channel=channel,
                 variation_seed=variation_seed,
                 request_id=request_id,
             )
             result = _post_request(api_base_url, request)
             print(
-                f"queued {request.id} category={category} language={language} "
+                f"queued {request.id} category={category} language={language} channel={channel} "
                 f"subject={request.subject!r} result={result['status']}",
                 flush=True,
             )

@@ -18,7 +18,7 @@ services:
       - AWS_PROFILE
     volumes:
       - ./data/db:/app/db
-      - ${HOME}/.aws:/root/.aws:ro
+      - ${HOME}/.aws:/root/.aws
     healthcheck:
       test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/health', timeout=2)"]
       interval: 10s
@@ -61,10 +61,11 @@ services:
       - REQUEST_FACTORY_MAX_REQUESTS=${REQUEST_FACTORY_MAX_REQUESTS:-12}
       - REQUEST_FACTORY_CATEGORY_WEIGHTS=${REQUEST_FACTORY_CATEGORY_WEIGHTS:-}
       - REQUEST_FACTORY_LANGUAGE_WEIGHTS=${REQUEST_FACTORY_LANGUAGE_WEIGHTS:-}
+      - REQUEST_FACTORY_CHANNEL_WEIGHTS=${REQUEST_FACTORY_CHANNEL_WEIGHTS:-}
       - AWS_ACCESS_KEY_ID
       - AWS_SECRET_ACCESS_KEY
       - AWS_SESSION_TOKEN
       - AWS_PROFILE
     volumes:
-      - ${HOME}/.aws:/root/.aws:ro
+      - ${HOME}/.aws:/root/.aws
     command: ["python", "request_factory.py"]

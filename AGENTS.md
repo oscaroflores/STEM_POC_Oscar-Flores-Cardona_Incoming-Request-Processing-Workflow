@@ -95,7 +95,7 @@ The project has moved beyond the original default suggestion. The current implem
 - Bedrock AI as the only classifier; no deterministic classifier fallback.
 - SQLite operational database using Python's built-in `sqlite3`: durable inbox state, current case records, ordered branch actions, supervisor overrides, and append-only audit log.
 - Docker Compose local deployment for the backend, persistent SQLite bind mount, and SQLite web UI.
-- Opt-in request factory microservice in `request_factory.py`, enabled with `docker compose --profile factory up --build`, that uses Bedrock to generate synthetic healthcare contact-center requests and queues them through `POST /api/inbox`.
+- Opt-in request factory microservice in `request_factory.py`, enabled with `docker compose --profile factory up --build`, that uses seeded randomness to choose category/language/channel, uses Bedrock to generate synthetic healthcare contact-center requests, and queues them through `POST /api/inbox`.
 - Bilingual JSON sample inbox with synthetic Spanish/English requests.
 - Standalone Next.js App Router frontend in `Submission_Incoming_Request_Processing_Workflow/frontend/`.
 - shadcn/ui-style local components, Tailwind CSS, and Radix primitives for the operations UI.
@@ -146,7 +146,7 @@ Current UI status:
 - `GET /api/cases` and `GET /api/overrides` hydrate persisted case and override state after browser refresh.
 - `POST /api/inbox` queues generated or manual requests without immediately processing them, preserving the normal inbox/SSE workflow.
 - Docker Compose runs the FastAPI backend with `CONDUCTOR_DB_PATH=/app/db/conductor_audit.db`, persists the DB to `data/db/conductor_audit.db`, and exposes SQLite web at `http://localhost:8080`.
-- Docker Compose has an opt-in `request-factory` profile. The factory chooses category/language using seeded randomness, asks Bedrock to write the synthetic request, and waits a random 4-20 seconds between requests by default. It can be tuned with `REQUEST_FACTORY_SEED`, `REQUEST_FACTORY_MIN_INTERVAL_SECONDS`, `REQUEST_FACTORY_MAX_INTERVAL_SECONDS`, `REQUEST_FACTORY_INTERVAL_SECONDS`, `REQUEST_FACTORY_MAX_REQUESTS`, category weights, and language weights.
+- Docker Compose has an opt-in `request-factory` profile. The factory chooses category/language/channel using seeded randomness, asks Bedrock to write the synthetic request, and waits a random 4-20 seconds between requests by default. It can be tuned with `REQUEST_FACTORY_SEED`, `REQUEST_FACTORY_MIN_INTERVAL_SECONDS`, `REQUEST_FACTORY_MAX_INTERVAL_SECONDS`, `REQUEST_FACTORY_INTERVAL_SECONDS`, `REQUEST_FACTORY_MAX_REQUESTS`, category weights, language weights, and channel weights.
 - Frontend verification passed: `npm run typecheck`, `npm run build`, and `npm audit --omit=dev`.
 - Live frontend-to-backend verification still needs to be completed against a running API.
 
