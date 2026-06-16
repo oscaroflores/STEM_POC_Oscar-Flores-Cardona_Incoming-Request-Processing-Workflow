@@ -4,12 +4,15 @@ Conductor API — FastAPI backend for the autonomous AI intake manager.
 Endpoints
   GET  /health                 - liveness + active classifier mode
   GET  /api/inbox              - the seeded sample inbox (mixed ES/EN requests)
+  POST /api/inbox              - enqueue one request for later processing
   POST /api/process            - process one ad-hoc request, return full result
   GET  /api/process-stream     - SSE: drain the inbox one-by-one, live
+  GET  /api/cases              - persisted processed case records
+  GET  /api/overrides          - latest supervisor override note per case
   GET  /api/dashboard          - operations summary aggregates
   GET  /api/audit              - full audit trail (most recent first)
   POST /api/override           - management override of a processed case
-  POST /api/reset              - clear the audit log for a clean demo
+  POST /api/reset              - reset demo database state and reseed inbox
 
 The SSE stream is what makes the demo feel like an agent at work: the queue
 drains in real time and the dashboard ticks up as each case is decided.
@@ -18,7 +21,7 @@ drains in real time and the dashboard ticks up as each case is decided.
 import json
 import asyncio
 
-from fastapi import FastAPI
+from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
@@ -42,11 +45,20 @@ app.add_middleware(
 @app.on_event("startup")
 def _startup() -> None:
     audit.init_db()
+    audit.seed_inbox(_load_sample_inbox())
+
+
+def _load_sample_inbox() -> list[IncomingRequest]:
+    with open(config.SAMPLE_DATA_PATH, encoding="utf-8") as fh:
+        return [IncomingRequest(**item) for item in json.load(fh)]
 
 
 def _load_inbox() -> list[IncomingRequest]:
-    with open(config.SAMPLE_DATA_PATH, encoding="utf-8") as fh:
-        return [IncomingRequest(**item) for item in json.load(fh)]
+    rows = audit.inbox_entries()
+    if not rows:
+        audit.seed_inbox(_load_sample_inbox())
+        rows = audit.inbox_entries()
+    return [IncomingRequest(**item) for item in rows]
 
 
 @app.get("/health")
@@ -62,6 +74,25 @@ def health() -> dict:
 @app.get("/api/inbox")
 def inbox() -> list[dict]:
     return [r.model_dump() for r in _load_inbox()]
+
+
+@app.post("/api/inbox", status_code=201)
+def enqueue_inbox(request: IncomingRequest) -> dict:
+    """Queue one generated/manual request without processing it immediately."""
+    try:
+        return audit.enqueue_request(request)
+    except ValueError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+
+
+@app.get("/api/cases")
+def cases() -> list[dict]:
+    return audit.processed_cases()
+
+
+@app.get("/api/overrides")
+def overrides() -> dict[str, str]:
+    return audit.latest_overrides()
 
 
 @app.post("/api/process")
@@ -114,15 +145,14 @@ class Override(BaseModel):
 def override(o: Override) -> dict:
     """Management override hook. Recorded as a note; in production this would
     update the case and re-route. Demonstrates human control over the agent."""
-    return {
-        "status": "recorded",
-        "request_id": o.request_id,
-        "action": o.action,
-        "note": o.note,
-    }
+    try:
+        return audit.record_override(o.request_id, o.action, o.note)
+    except ValueError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
 
 
 @app.post("/api/reset")
 def reset() -> dict:
     audit.reset()
-    return {"status": "audit log cleared"}
+    audit.seed_inbox(_load_sample_inbox())
+    return {"status": "database reset and sample inbox reseeded"}

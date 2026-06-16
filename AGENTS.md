@@ -93,7 +93,9 @@ The project has moved beyond the original default suggestion. The current implem
 
 - Python/FastAPI backend for the workflow API.
 - Bedrock AI as the only classifier; no deterministic classifier fallback.
-- SQLite audit log for classification decisions, routing actions, generated drafts, and escalation flags.
+- SQLite operational database using Python's built-in `sqlite3`: durable inbox state, current case records, ordered branch actions, supervisor overrides, and append-only audit log.
+- Docker Compose local deployment for the backend, persistent SQLite bind mount, and SQLite web UI.
+- Opt-in request factory microservice in `request_factory.py`, enabled with `docker compose --profile factory up --build`, that uses Bedrock to generate synthetic healthcare contact-center requests and queues them through `POST /api/inbox`.
 - Bilingual JSON sample inbox with synthetic Spanish/English requests.
 - Standalone Next.js App Router frontend in `Submission_Incoming_Request_Processing_Workflow/frontend/`.
 - shadcn/ui-style local components, Tailwind CSS, and Radix primitives for the operations UI.
@@ -140,6 +142,11 @@ Current UI status:
 
 - Next.js operations UI exists in `frontend/`.
 - It includes the live inbox board, dashboard summary, escalation queue, detail sheet, management override form, and ad-hoc request form.
+- The backend now persists operational state in SQLite tables: `inbox_requests`, `cases`, `case_actions`, `case_overrides`, and `audit_log`.
+- `GET /api/cases` and `GET /api/overrides` hydrate persisted case and override state after browser refresh.
+- `POST /api/inbox` queues generated or manual requests without immediately processing them, preserving the normal inbox/SSE workflow.
+- Docker Compose runs the FastAPI backend with `CONDUCTOR_DB_PATH=/app/db/conductor_audit.db`, persists the DB to `data/db/conductor_audit.db`, and exposes SQLite web at `http://localhost:8080`.
+- Docker Compose has an opt-in `request-factory` profile. The factory chooses category/language using seeded randomness, asks Bedrock to write the synthetic request, and waits a random 4-20 seconds between requests by default. It can be tuned with `REQUEST_FACTORY_SEED`, `REQUEST_FACTORY_MIN_INTERVAL_SECONDS`, `REQUEST_FACTORY_MAX_INTERVAL_SECONDS`, `REQUEST_FACTORY_INTERVAL_SECONDS`, `REQUEST_FACTORY_MAX_REQUESTS`, category weights, and language weights.
 - Frontend verification passed: `npm run typecheck`, `npm run build`, and `npm audit --omit=dev`.
 - Live frontend-to-backend verification still needs to be completed against a running API.
 
@@ -190,6 +197,7 @@ Keep the demo under 3 minutes. Script around business value, not just UI clicks.
 Before claiming completion:
 
 - Run the app locally.
+- For the database-backed local deployment, run `docker compose up --build` from `Submission_Incoming_Request_Processing_Workflow/` and verify the API at `http://localhost:8000` plus SQLite web at `http://localhost:8080`.
 - Run the backend API and the Next.js frontend together.
 - Process representative examples for every branch.
 - Confirm the expected classification, urgency, actions, and generated outputs appear.
@@ -197,7 +205,8 @@ Before claiming completion:
 - Confirm the ad-hoc form calls `POST /api/process` successfully.
 - Confirm the management override control calls `POST /api/override` successfully.
 - Confirm the dashboard and escalation queue update during a live run.
-- Confirm audit/log output is created and readable.
+- Confirm SQLite output is created and readable: inbox rows, processed case rows, case action rows, override rows, and append-only audit rows.
+- If using the request factory, run `docker compose --profile factory up --build`, confirm generated `FACT-*` rows appear in `GET /api/inbox`, and confirm `GET /api/process-stream` processes them through the same classifier, remediation branches, and audit log.
 - Confirm frontend checks pass: `npm run typecheck`, `npm run build`, and `npm audit --omit=dev` from `frontend/`.
 - Confirm the README setup steps are accurate.
 - Confirm the deck or deck outline matches the required five-slide structure.

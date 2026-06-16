@@ -1,0 +1,70 @@
+services:
+  api:
+    build:
+      context: .
+    container_name: conductor-api
+    ports:
+      - "8000:8000"
+    environment:
+      - CONDUCTOR_DB_PATH=/app/db/conductor_audit.db
+      - AWS_REGION=${AWS_REGION:-us-east-1}
+      - CONDUCTOR_MODEL_ID=${CONDUCTOR_MODEL_ID:-amazon.nova-lite-v1:0}
+      - CONDUCTOR_LLM_TIMEOUT=${CONDUCTOR_LLM_TIMEOUT:-12}
+      - CONDUCTOR_CONF_THRESHOLD=${CONDUCTOR_CONF_THRESHOLD:-0.70}
+      - CONDUCTOR_PROCESS_DELAY=${CONDUCTOR_PROCESS_DELAY:-1.1}
+      - AWS_ACCESS_KEY_ID
+      - AWS_SECRET_ACCESS_KEY
+      - AWS_SESSION_TOKEN
+      - AWS_PROFILE
+    volumes:
+      - ./data/db:/app/db
+      - ${HOME}/.aws:/root/.aws:ro
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/health', timeout=2)"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+      start_period: 10s
+
+  sqlite-web:
+    image: python:3.12-slim
+    container_name: conductor-sqlite-web
+    depends_on:
+      api:
+        condition: service_started
+    ports:
+      - "8080:8080"
+    volumes:
+      - ./data/db:/data
+    command: >
+      sh -c "touch /data/conductor_audit.db &&
+      pip install --no-cache-dir sqlite-web &&
+      sqlite_web --host 0.0.0.0 --port 8080 /data/conductor_audit.db"
+
+  request-factory:
+    profiles: ["factory"]
+    build:
+      context: .
+    container_name: conductor-request-factory
+    depends_on:
+      api:
+        condition: service_healthy
+    environment:
+      - CONDUCTOR_API_BASE_URL=http://api:8000
+      - AWS_REGION=${AWS_REGION:-us-east-1}
+      - CONDUCTOR_MODEL_ID=${CONDUCTOR_MODEL_ID:-amazon.nova-lite-v1:0}
+      - REQUEST_FACTORY_MODEL_ID
+      - REQUEST_FACTORY_SEED=${REQUEST_FACTORY_SEED:-20260616}
+      - REQUEST_FACTORY_INTERVAL_SECONDS
+      - REQUEST_FACTORY_MIN_INTERVAL_SECONDS=${REQUEST_FACTORY_MIN_INTERVAL_SECONDS:-4}
+      - REQUEST_FACTORY_MAX_INTERVAL_SECONDS=${REQUEST_FACTORY_MAX_INTERVAL_SECONDS:-20}
+      - REQUEST_FACTORY_MAX_REQUESTS=${REQUEST_FACTORY_MAX_REQUESTS:-12}
+      - REQUEST_FACTORY_CATEGORY_WEIGHTS=${REQUEST_FACTORY_CATEGORY_WEIGHTS:-}
+      - REQUEST_FACTORY_LANGUAGE_WEIGHTS=${REQUEST_FACTORY_LANGUAGE_WEIGHTS:-}
+      - AWS_ACCESS_KEY_ID
+      - AWS_SECRET_ACCESS_KEY
+      - AWS_SESSION_TOKEN
+      - AWS_PROFILE
+    volumes:
+      - ${HOME}/.aws:/root/.aws:ro
+    command: ["python", "request_factory.py"]
