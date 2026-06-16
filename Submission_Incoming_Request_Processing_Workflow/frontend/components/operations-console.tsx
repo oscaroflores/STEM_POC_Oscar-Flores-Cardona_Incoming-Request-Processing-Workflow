@@ -9,12 +9,14 @@ import {
   Bot,
   ChevronLeft,
   ChevronRight,
+  Clock3,
   ClipboardCheck,
   FileWarning,
   GitBranch,
   HeartPulse,
   Inbox,
   Layers3,
+  Mail,
   PanelRightClose,
   PanelRightOpen,
   Play,
@@ -23,17 +25,19 @@ import {
   ShieldAlert,
   Square,
   Stethoscope,
+  UserRound,
 } from "lucide-react";
 import { AppRail } from "@/components/app-rail";
 import { DashboardSummary } from "@/components/dashboard-summary";
 import { EscalationQueue } from "@/components/escalation-queue";
 import { RequestCard } from "@/components/request-card";
 import { RequestDetailSheet } from "@/components/request-detail-sheet";
-import { Badge } from "@/components/ui/badge";
+import { StatusField } from "@/components/status-badges";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { ScrollArea } from "@/components/ui/scroll-area";
-import { API_BASE_URL, getDashboard, getHealth, getInbox, recordOverride, resetAuditLog, streamUrl } from "@/lib/api";
+import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle } from "@/components/ui/sheet";
+import { API_BASE_URL, getCases, getDashboard, getHealth, getInbox, getOverrides, recordOverride, resetAuditLog, streamUrl } from "@/lib/api";
 import type { DashboardSummary as DashboardSummaryType, HealthStatus, IncomingRequest, OverridePayload, ProcessedRequest, RequestType, StreamPayload } from "@/lib/types";
 import { cn, formatPercent, titleize } from "@/lib/utils";
 
@@ -45,6 +49,8 @@ const emptyDashboard: DashboardSummaryType = {
   avg_confidence: null,
   generated_at: new Date().toISOString(),
 };
+
+const POLL_INTERVAL_MS = 4000;
 
 const branchNodes: Array<{
   type: RequestType | "human_review";
@@ -68,7 +74,9 @@ export function OperationsConsole() {
   const [processed, setProcessed] = React.useState<ProcessedRequest[]>([]);
   const [processing, setProcessing] = React.useState<ProcessedRequest | null>(null);
   const [selected, setSelected] = React.useState<ProcessedRequest | null>(null);
+  const [selectedIncoming, setSelectedIncoming] = React.useState<IncomingRequest | null>(null);
   const [isSheetOpen, setIsSheetOpen] = React.useState(false);
+  const [isIncomingSheetOpen, setIsIncomingSheetOpen] = React.useState(false);
   const [isStreaming, setIsStreaming] = React.useState(false);
   const [isAnalyticsOpen, setIsAnalyticsOpen] = React.useState(false);
   const [streamProgress, setStreamProgress] = React.useState<{ index: number; total: number } | null>(null);
@@ -82,16 +90,34 @@ export function OperationsConsole() {
 
   React.useEffect(() => {
     void loadInitialState();
-    return () => streamRef.current?.close();
+
+    const pollId = window.setInterval(() => {
+      if (!document.hidden) {
+        void loadInitialState();
+      }
+    }, POLL_INTERVAL_MS);
+
+    return () => {
+      window.clearInterval(pollId);
+      streamRef.current?.close();
+    };
   }, []);
 
   async function loadInitialState() {
     setError(null);
     try {
-      const [healthResult, inboxResult, dashboardResult] = await Promise.all([getHealth(), getInbox(), getDashboard()]);
+      const [healthResult, inboxResult, dashboardResult, caseResult, overrideResult] = await Promise.all([
+        getHealth(),
+        getInbox(),
+        getDashboard(),
+        getCases(),
+        getOverrides(),
+      ]);
       setHealth(healthResult);
       setIncoming(inboxResult);
       setDashboard(dashboardResult);
+      setProcessed(caseResult);
+      setOverrides(overrideResult);
     } catch (loadError) {
       setError(loadError instanceof Error ? loadError.message : "Unable to reach the Conductor API.");
     }
@@ -151,7 +177,9 @@ export function OperationsConsole() {
       setProcessed([]);
       setProcessing(null);
       setSelected(null);
+      setSelectedIncoming(null);
       setIsSheetOpen(false);
+      setIsIncomingSheetOpen(false);
       setOverrides({});
       setDashboard(emptyDashboard);
       await loadInitialState();
@@ -166,104 +194,108 @@ export function OperationsConsole() {
   }
 
   function openRequest(request: ProcessedRequest) {
+    setIsIncomingSheetOpen(false);
     setSelected(request);
     setIsSheetOpen(true);
   }
 
+  function openIncomingRequest(request: IncomingRequest) {
+    setIsSheetOpen(false);
+    setSelectedIncoming(request);
+    setIsIncomingSheetOpen(true);
+  }
+
   return (
-    <main className="notion-grid min-h-screen">
-      <div className="flex min-h-screen bg-background/80">
-        <AppRail active="home" escalations={escalations.length} />
+    <main className="notion-grid flex min-h-screen bg-background/80">
+      <AppRail active="home" escalations={escalations.length} />
 
-        <section className="relative min-w-0 flex-1 overflow-hidden px-3 py-3 sm:px-4">
-          <div className="relative min-h-[calc(100vh-1.5rem)] overflow-hidden border bg-[#fbfaf6]/92 shadow-[0_1px_1px_rgba(31,35,40,0.04),0_30px_90px_rgba(31,35,40,0.08)]">
-            <div className="absolute inset-0 workflow-canvas-grid" />
+      <section className="relative min-w-0 flex-1 overflow-hidden border bg-[#fbfaf6]/92 shadow-[0_1px_1px_rgba(31,35,40,0.04),0_30px_90px_rgba(31,35,40,0.08)]">
+        <div className="absolute inset-0 workflow-canvas-grid" />
 
-            <header className="relative z-20 flex flex-wrap items-center justify-between gap-3 border-b bg-card/70 px-4 py-3 backdrop-blur-xl sm:px-5">
-              <div className="flex items-center gap-3">
-                <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-primary text-primary-foreground shadow-sm">
-                  <Stethoscope className="h-5 w-5" />
-                </div>
-                <div>
-                  <div className="text-lg font-semibold tracking-tight">Conductor</div>
-                  <div className="text-xs text-muted-foreground">TeleMedik POC</div>
-                </div>
-              </div>
-
-              <div className="flex flex-wrap items-center gap-2">
-                <Badge variant="success">Bedrock AI only</Badge>
-                <Button type="button" size="sm" onClick={startStream} disabled={isStreaming}>
-                  <Play className="h-4 w-4" />
-                  Run
-                </Button>
-                <Button type="button" size="sm" variant="outline" onClick={stopStream} disabled={!isStreaming}>
-                  <Square className="h-4 w-4" />
-                  Stop
-                </Button>
-                <Button type="button" size="sm" variant="secondary" onClick={resetDemo}>
-                  <RefreshCcw className="h-4 w-4" />
-                  Reset
-                </Button>
-                <Button type="button" size="sm" variant="outline" asChild>
-                  <Link href="/create-request">Create Request</Link>
-                </Button>
-                <Button type="button" size="sm" variant="outline" onClick={() => setIsAnalyticsOpen((open) => !open)}>
-                  {isAnalyticsOpen ? <PanelRightClose className="h-4 w-4" /> : <PanelRightOpen className="h-4 w-4" />}
-                  Analytics
-                </Button>
-              </div>
-            </header>
-
-            {error ? (
-              <div className="relative z-20 mx-4 mt-4 rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-900">
-                {error}
-                <div className="mt-1 text-xs text-red-700">API base URL: {API_BASE_URL}</div>
-              </div>
-            ) : null}
-
-            <WorkflowCanvas
-              visibleIncoming={visibleIncoming}
-              processing={processing}
-              processed={processed}
-              streamProgress={streamProgress}
-              isStreaming={isStreaming}
-              onOpenRequest={openRequest}
-            />
-
-            <button
-              type="button"
-              onClick={() => setIsAnalyticsOpen((open) => !open)}
-              className="absolute right-3 top-1/2 z-30 hidden -translate-y-1/2 rounded-full border bg-card/90 p-2 text-muted-foreground shadow-sm transition-colors hover:bg-muted hover:text-foreground lg:block"
-              aria-label={isAnalyticsOpen ? "Collapse analytics" : "Expand analytics"}
-            >
-              {isAnalyticsOpen ? <ChevronRight className="h-4 w-4" /> : <ChevronLeft className="h-4 w-4" />}
-            </button>
-
-            <aside
-              className={cn(
-                "absolute bottom-0 right-0 top-[65px] z-40 w-full max-w-[420px] border-l bg-card/94 shadow-[-24px_0_70px_rgba(31,35,40,0.12)] backdrop-blur-xl transition-transform duration-300",
-                isAnalyticsOpen ? "translate-x-0" : "translate-x-full",
-              )}
-            >
-              <div className="flex items-center justify-between border-b px-4 py-3">
-                <div>
-                  <div className="text-sm font-semibold">Analytics</div>
-                  <div className="text-xs text-muted-foreground">Home metrics and supervisor queue</div>
-                </div>
-                <Button type="button" size="icon" variant="ghost" onClick={() => setIsAnalyticsOpen(false)} aria-label="Close analytics">
-                  <PanelRightClose className="h-4 w-4" />
-                </Button>
-              </div>
-              <ScrollArea className="h-[calc(100vh-116px)]">
-                <div className="space-y-5 p-4">
-                  <DashboardSummary dashboard={dashboard} health={health} isStreaming={isStreaming} />
-                  <EscalationQueue items={escalations} onSelect={openRequest} />
-                </div>
-              </ScrollArea>
-            </aside>
+        <header className="relative z-20 flex flex-wrap items-center justify-between gap-3 border-b bg-card/70 px-4 py-3 backdrop-blur-xl sm:px-5">
+          <div className="flex items-center gap-3">
+            <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-primary text-primary-foreground shadow-sm">
+              <Stethoscope className="h-5 w-5" />
+            </div>
+            <div>
+              <div className="text-lg font-semibold tracking-tight">Conductor</div>
+              <div className="text-xs text-muted-foreground">TeleMedik POC</div>
+            </div>
           </div>
-        </section>
-      </div>
+
+          <div className="flex flex-wrap items-center gap-2">
+            <StatusField label="Classifier" value="Bedrock AI" tone="green" />
+            <Button type="button" size="sm" onClick={startStream} disabled={isStreaming}>
+              <Play className="h-4 w-4" />
+              Run
+            </Button>
+            <Button type="button" size="sm" variant="outline" onClick={stopStream} disabled={!isStreaming}>
+              <Square className="h-4 w-4" />
+              Stop
+            </Button>
+            <Button type="button" size="sm" variant="secondary" onClick={resetDemo}>
+              <RefreshCcw className="h-4 w-4" />
+              Reset
+            </Button>
+            <Button type="button" size="sm" variant="outline" asChild>
+              <Link href="/create-request">Create Request</Link>
+            </Button>
+            <Button type="button" size="sm" variant="outline" onClick={() => setIsAnalyticsOpen((open) => !open)}>
+              {isAnalyticsOpen ? <PanelRightClose className="h-4 w-4" /> : <PanelRightOpen className="h-4 w-4" />}
+              Analytics
+            </Button>
+          </div>
+        </header>
+
+        {error ? (
+          <div className="relative z-20 mx-4 mt-4 rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-900">
+            {error}
+            <div className="mt-1 text-xs text-red-700">API base URL: {API_BASE_URL}</div>
+          </div>
+        ) : null}
+
+        <WorkflowCanvas
+          visibleIncoming={visibleIncoming}
+          processing={processing}
+          processed={processed}
+          streamProgress={streamProgress}
+          isStreaming={isStreaming}
+          onOpenRequest={openRequest}
+          onOpenIncomingRequest={openIncomingRequest}
+        />
+
+        <button
+          type="button"
+          onClick={() => setIsAnalyticsOpen((open) => !open)}
+          className="absolute right-3 top-1/2 z-30 hidden -translate-y-1/2 rounded-full border bg-card/90 p-2 text-muted-foreground shadow-sm transition-colors hover:bg-muted hover:text-foreground lg:block"
+          aria-label={isAnalyticsOpen ? "Collapse analytics" : "Expand analytics"}
+        >
+          {isAnalyticsOpen ? <ChevronRight className="h-4 w-4" /> : <ChevronLeft className="h-4 w-4" />}
+        </button>
+
+        <aside
+          className={cn(
+            "absolute bottom-0 right-0 top-[65px] z-40 w-full max-w-[420px] border-l bg-card/94 shadow-[-24px_0_70px_rgba(31,35,40,0.12)] backdrop-blur-xl transition-transform duration-300",
+            isAnalyticsOpen ? "translate-x-0" : "translate-x-full",
+          )}
+        >
+          <div className="flex items-center justify-between border-b px-4 py-3">
+            <div>
+              <div className="text-sm font-semibold">Analytics</div>
+              <div className="text-xs text-muted-foreground">Home metrics and supervisor queue</div>
+            </div>
+            <Button type="button" size="icon" variant="ghost" onClick={() => setIsAnalyticsOpen(false)} aria-label="Close analytics">
+              <PanelRightClose className="h-4 w-4" />
+            </Button>
+          </div>
+          <ScrollArea className="h-[calc(100vh-116px)]">
+            <div className="space-y-5 p-4">
+              <DashboardSummary dashboard={dashboard} health={health} isStreaming={isStreaming} />
+              <EscalationQueue items={escalations} onSelect={openRequest} />
+            </div>
+          </ScrollArea>
+        </aside>
+      </section>
 
       <RequestDetailSheet
         request={selected}
@@ -272,6 +304,7 @@ export function OperationsConsole() {
         onOverride={submitOverride}
         overrideNote={selected ? overrides[selected.request.id] : undefined}
       />
+      <IncomingRequestDetailSheet request={selectedIncoming} open={isIncomingSheetOpen} onOpenChange={setIsIncomingSheetOpen} />
     </main>
   );
 }
@@ -283,6 +316,7 @@ function WorkflowCanvas({
   streamProgress,
   isStreaming,
   onOpenRequest,
+  onOpenIncomingRequest,
 }: {
   visibleIncoming: IncomingRequest[];
   processing: ProcessedRequest | null;
@@ -290,6 +324,7 @@ function WorkflowCanvas({
   streamProgress: { index: number; total: number } | null;
   isStreaming: boolean;
   onOpenRequest: (request: ProcessedRequest) => void;
+  onOpenIncomingRequest: (request: IncomingRequest) => void;
 }) {
   return (
     <div className="relative z-10 min-h-[760px] px-4 py-5 sm:px-5 lg:px-7 lg:py-7">
@@ -312,11 +347,15 @@ function WorkflowCanvas({
               </div>
               <div className="text-xs text-muted-foreground">Unsorted request cards waiting for triage</div>
             </div>
-            <Badge variant="outline">{visibleIncoming.length}</Badge>
+            <StatusField label="Waiting" value={String(visibleIncoming.length)} />
           </div>
           <ScrollArea className="h-[580px]">
             <div className="space-y-3 p-3">
-              {visibleIncoming.length ? visibleIncoming.map((request) => <RequestCard key={request.id} request={request} state="incoming" />) : <EmptyState text="No waiting requests." />}
+              {visibleIncoming.length ? (
+                visibleIncoming.map((request) => <RequestCard key={request.id} request={request} state="incoming" onClick={() => onOpenIncomingRequest(request)} />)
+              ) : (
+                <EmptyState text="No waiting requests." />
+              )}
             </div>
           </ScrollArea>
         </section>
@@ -346,7 +385,7 @@ function WorkflowCanvas({
               <GitBranch className="h-4 w-4 text-primary" />
               Sorted Outcome Piles
             </div>
-            <Badge variant="outline">{processed.length} logged</Badge>
+            <StatusField label="Logged" value={String(processed.length)} />
           </div>
           <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-2">
             {branchNodes.map((node) => {
@@ -357,6 +396,65 @@ function WorkflowCanvas({
         </section>
       </div>
     </div>
+  );
+}
+
+function IncomingRequestDetailSheet({ request, open, onOpenChange }: { request: IncomingRequest | null; open: boolean; onOpenChange: (open: boolean) => void }) {
+  if (!request) {
+    return <Sheet open={open} onOpenChange={onOpenChange} />;
+  }
+
+  return (
+    <Sheet open={open} onOpenChange={onOpenChange}>
+      <SheetContent className="flex flex-col overflow-hidden p-0 sm:max-w-2xl">
+        <SheetHeader className="border-b bg-card px-6 py-5">
+          <div className="mb-2 grid grid-cols-2 gap-2 sm:grid-cols-4">
+            <StatusField label="Status" value="Awaiting Classification" className="sm:col-span-2" />
+            <StatusField label="Type" value="Pending" />
+            <StatusField label="Channel" value={titleize(request.channel)} />
+          </div>
+          <SheetTitle>{request.subject}</SheetTitle>
+          <SheetDescription>
+            {request.id} · {request.member_name || "Member"} · {titleize(request.channel)}
+          </SheetDescription>
+        </SheetHeader>
+
+        <ScrollArea className="min-h-0 flex-1">
+          <div className="space-y-6 px-6 py-5">
+            <section className="rounded-lg border bg-muted/35 p-4">
+              <div className="mb-2 flex items-center gap-2 text-sm font-semibold">
+                <UserRound className="h-4 w-4 text-primary" />
+                Original request
+              </div>
+              <p className="whitespace-pre-wrap text-sm leading-6 text-muted-foreground">{request.body}</p>
+            </section>
+
+            <section className="rounded-lg border border-dashed bg-card p-4">
+              <div className="mb-2 flex items-center gap-2 text-sm font-semibold">
+                <Clock3 className="h-4 w-4 text-primary" />
+                Waiting for workflow processing
+              </div>
+              <p className="text-sm leading-6 text-muted-foreground">
+                This request is present in the intake inbox but does not have a persisted case record yet. Run the workflow canvas to classify it and generate branch-specific outputs.
+              </p>
+            </section>
+
+            <section className="rounded-lg border bg-card p-4">
+              <div className="mb-3 flex items-center gap-2 text-sm font-semibold">
+                <Mail className="h-4 w-4 text-primary" />
+                Intake metadata
+              </div>
+              <div className="grid grid-cols-1 gap-3 text-sm sm:grid-cols-2">
+                <Info label="Request ID" value={request.id} />
+                <Info label="Member" value={request.member_name || "Member"} />
+                <Info label="Channel" value={titleize(request.channel)} />
+                <Info label="Workflow state" value="Unclassified" />
+              </div>
+            </section>
+          </div>
+        </ScrollArea>
+      </SheetContent>
+    </Sheet>
   );
 }
 
@@ -391,7 +489,7 @@ function OutcomeNode({
               <div className="text-sm font-semibold">{node.title}</div>
               <div className="mt-0.5 text-xs leading-4 text-muted-foreground">{node.caption}</div>
             </div>
-            <Badge variant={items.length ? "teal" : "outline"}>{items.length}</Badge>
+            <StatusField label="Cases" value={String(items.length)} tone={items.length ? "teal" : "default"} className="min-w-[64px]" />
           </div>
 
           <div className="mt-3 min-h-[82px]">
@@ -433,6 +531,15 @@ function EmptyState({ text }: { text: string }) {
     <div className="rounded-lg border border-dashed bg-card/62 p-5 text-center text-sm text-muted-foreground">
       <Layers3 className="mx-auto mb-2 h-5 w-5 text-primary/70" />
       {text}
+    </div>
+  );
+}
+
+function Info({ label, value }: { label: string; value: string }) {
+  return (
+    <div className="rounded-md bg-muted/50 px-3 py-2">
+      <div className="text-xs text-muted-foreground">{label}</div>
+      <div className="mt-1 break-words text-sm font-medium">{value}</div>
     </div>
   );
 }
