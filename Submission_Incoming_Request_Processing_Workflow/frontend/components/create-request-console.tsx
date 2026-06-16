@@ -17,6 +17,7 @@ export function CreateRequestConsole() {
   const [selected, setSelected] = React.useState<ProcessedRequest | null>(null);
   const [isSheetOpen, setIsSheetOpen] = React.useState(false);
   const [overrides, setOverrides] = React.useState<Record<string, string>>({});
+  const [role, setRole] = React.useState("agent");
 
   async function submitRequest(request: IncomingRequest) {
     const result = await processRequest(request);
@@ -51,12 +52,21 @@ export function CreateRequestConsole() {
               <div className="text-xs text-muted-foreground">TeleMedik POC</div>
             </div>
           </div>
-          <Button type="button" size="sm" variant="outline" asChild>
-            <Link href="/">
-              <ArrowLeft className="h-4 w-4" />
-              Home
-            </Link>
-          </Button>
+          <div className="flex items-center gap-2">
+            <label className="flex items-center gap-1.5 rounded-md border bg-background px-2 py-1 text-xs text-muted-foreground">
+              Role
+              <select value={role} onChange={(event) => setRole(event.target.value)} className="bg-transparent font-medium text-foreground outline-none">
+                <option value="agent">Agent</option>
+                <option value="supervisor">Supervisor</option>
+              </select>
+            </label>
+            <Button type="button" size="sm" variant="outline" asChild>
+              <Link href="/">
+                <ArrowLeft className="h-4 w-4" />
+                Home
+              </Link>
+            </Button>
+          </div>
         </header>
 
         <div className="mx-auto grid max-w-6xl gap-5 px-4 py-5 lg:grid-cols-[minmax(0,1fr)_360px] lg:px-8 lg:py-8">
@@ -100,6 +110,7 @@ export function CreateRequestConsole() {
         onOpenChange={setIsSheetOpen}
         onOverride={submitOverride}
         overrideNote={selected ? overrides[selected.request.id] : undefined}
+        role={role}
       />
     </main>
   );

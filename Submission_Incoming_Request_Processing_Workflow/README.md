@@ -9,6 +9,13 @@ each by **type** and **urgency**, and routes it to the correct team with a
 complete, branch-specific handoff package — while refusing to act on anything
 clinical or anything it isn't confident about, sending those to a human instead.
 
+The intake path now includes an internal **PHI Masking Gateway** microservice:
+raw member identifiers are tokenized before they enter the workflow database or
+the Bedrock classifier. The classifier, branch engine, audit log, SSE payloads,
+and UI operate on de-identified text such as `[NAME-1]` and `[ACCT-1]`; raw
+values live only in the separate PHI vault database and can be resolved only by
+authorized roles with an access-log entry.
+
 > **Design thesis: _AI reasons, rules act._**
 > The model does exactly one job — read a request and emit a structured
 > request type. A deterministic workflow engine does everything else: routing, drafting,
@@ -50,10 +57,12 @@ clinical or treatment language — consistent and compliant by construction.
 
 ```mermaid
 flowchart TD
-    source["Sample inbox / API / request factory"] --> inbox["Inbox queue"]
+    source["Sample inbox / API / request factory"] --> mask["PHI Masking Gateway<br/>AWS Comprehend + Comprehend Medical"]
+    mask --> vault[("PHI vault SQLite<br/>raw values only here")]
+    mask --> inbox["Masked inbox queue"]
     inbox --> orchestrator["Orchestrator<br/>autonomous, one request at a time"]
 
-    orchestrator --> classify["classify()<br/>Bedrock AI only"]
+    orchestrator --> classify["classify()<br/>Bedrock AI only<br/>masked subject/body"]
     classify --> decision["type_decision<br/>type, urgency, confidence<br/>language, clinical_flag, phi_present<br/>rationale, key_entities"]
 
     decision --> gates{"Safety gates<br/>clinical or low confidence?"}
@@ -77,11 +86,19 @@ request generation, but it does not classify or remediate. It only writes
 healthcare-safe synthetic inbox items through `POST /api/inbox`; the normal
 orchestrator, safety gates, branch logic, and audit trail handle them afterward.
 
-## SQLite database
+## SQLite databases
 
 Conductor uses local SQLite storage through Python's built-in `sqlite3` module —
-no external database service or ORM is required for the demo. The database file
-defaults to `conductor_audit.db` and can be moved with `CONDUCTOR_DB_PATH`.
+no external database service or ORM is required for the demo. There are now two
+separate databases by design:
+
+| Database | Owner | Purpose |
+| --- | --- | --- |
+| Operational DB | Main Conductor API | Masked inbox, cases, branch actions, overrides, and audit trail. No raw member identifiers. |
+| PHI vault DB | Internal PHI masking service | Raw token values keyed by `mask_id` plus PHI access log. |
+
+The operational database file defaults to `conductor_audit.db` and can be moved
+with `CONDUCTOR_DB_PATH`.
 
 Persisted tables:
 
@@ -93,19 +110,38 @@ Persisted tables:
 | `case_overrides` | Supervisor override action and note history. |
 | `audit_log` | Append-only compliance trail for every processing run. |
 
+PHI vault tables, owned by the masking service:
+
+| Table | Purpose |
+| --- | --- |
+| `phi_vault` | `(mask_id, token) -> original value`; the only place raw identifiers are stored. |
+| `phi_access_log` | Granted and denied resolution attempts with role, reason, and timestamp. |
+| `masking_requests` | Demo-safe masking counts by request and token kind. |
+
 This lets the operations dashboard, processed case board, escalation queue, and
 management override notes survive a browser refresh while preserving the
 append-only audit record needed for review.
 
 ## Run it
 
-AI classification through Bedrock is required. Configure AWS credentials and:
+AI classification through Bedrock and AWS-native PHI detection are required.
+Configure AWS credentials with access to Bedrock, Comprehend, and Comprehend
+Medical. For local non-Docker development, start the internal masking service in
+one terminal and the workflow API in another:
 
 ```bash
 cd Submission_Incoming_Request_Processing_Workflow
 pip install -r requirements.txt
 export AWS_REGION=us-east-1
+export CONDUCTOR_PHI_DB_PATH=./phi_vault.db
+uvicorn phi_masking_service.main:app --reload --port 8100
+```
+
+```bash
+cd Submission_Incoming_Request_Processing_Workflow
+export AWS_REGION=us-east-1
 export CONDUCTOR_MODEL_ID=amazon.nova-lite-v1:0   # or claude-3-5-haiku, deepseek
+export PHI_MASKING_SERVICE_URL=http://localhost:8100
 uvicorn main:app --reload --port 8000
 ```
 
@@ -113,11 +149,27 @@ Cheap, fast, JSON-reliable models are preferred — the model's only job is the
 structured request type, so classification reliability matters more than raw power.
 Bedrock model access must be enabled in your account/region.
 
+Required IAM actions for masking:
+
+| Service | Action |
+| --- | --- |
+| Amazon Comprehend | `comprehend:DetectDominantLanguage` |
+| Amazon Comprehend | `comprehend:DetectPiiEntities` |
+| Amazon Comprehend Medical | `comprehendmedical:DetectPHI` |
+
 ### Run backend + SQLite in Docker
 
-For local deployment, the preferred path is Docker Compose. The FastAPI backend
-owns the SQLite file and persists it to `data/db/conductor_audit.db`; a separate
-SQLite web UI mounts the same file for inspection during the demo.
+For local deployment, the preferred path is Docker Compose. The stack starts the
+internal PHI masking service first, then the FastAPI workflow backend. The PHI
+service is not exposed on a host port; the main API reaches it through Docker
+networking at `http://phi-masker:8100` and proxies demo-safe endpoints under
+`/api/masking/*`.
+
+The workflow backend persists masked operational state to
+`data/db/conductor_audit.db`. The PHI masking service persists its separate vault
+to `data/phi-db/phi_vault.db`. Only the operational database is mounted in the
+SQLite web UI; the PHI vault contains raw values and is intentionally not exposed
+through the browser helper.
 
 Configure AWS credentials in your shell or use an AWS profile from `~/.aws`:
 
@@ -134,12 +186,14 @@ Services:
 | Service | URL | Purpose |
 | --- | --- | --- |
 | FastAPI backend | `http://localhost:8000` | Workflow API, Bedrock classifier, SQLite owner. |
+| PHI masking service | internal only | AWS PHI/PII detection, token vault, role-gated resolution API. |
 | SQLite web UI | `http://localhost:8080` | Inspect `inbox_requests`, `cases`, `case_actions`, `case_overrides`, and `audit_log`. |
 
 The database persists on the host at:
 
 ```text
 data/db/conductor_audit.db
+data/phi-db/phi_vault.db
 ```
 
 Reset the local demo database through the API:
@@ -218,6 +272,9 @@ Endpoints:
 | `POST /api/process` | process one ad-hoc request |
 | `GET /api/dashboard` | operations summary (volume, urgency mix, escalations) |
 | `GET /api/audit` | full audit trail, most recent first |
+| `GET /api/masking/health` | proxied PHI masking service health and token counts |
+| `POST /api/masking/resolve` | role-gated token resolution; always audited by the masking service |
+| `GET /api/phi-access-log` | PHI reveal/denial log, most recent first |
 | `POST /api/override` | management override of a case |
 | `POST /api/reset` | reset demo database state and reseed the sample inbox |
 
@@ -243,6 +300,13 @@ UI coverage:
 - Per-request detail sheet showing classification, urgency, confidence,
   language, rationale, branch actions, assigned team, SLA/follow-up, generated
   draft response, and escalation reason.
+- Masking Gateway status chip showing de-identification status and total vaulted
+  token count.
+- Per-request PHI badge showing how many tokens were vaulted before processing.
+- Demo role switcher (`Agent` default, `Supervisor`) with supervisor-only PHI
+  reveal in the detail sheet. Reveals require a reason, call
+  `POST /api/masking/resolve`, substitute values locally for review, and write a
+  PHI access-log row. Stored drafts and audit rows remain tokenized.
 - Operations dashboard with processed volume, urgency mix, type mix, pending
   human review count, average confidence, backend health, and AI classifier mode.
 - Escalations / needs-review queue for clinical and low-confidence cases.
@@ -261,23 +325,59 @@ the demo, not silently hidden behind heuristic routing.
 
 Core workflow tunables live in `config.py` (env-overridable):
 `CONDUCTOR_CONF_THRESHOLD`, `CONDUCTOR_PROCESS_DELAY` (demo pacing),
-`CONDUCTOR_MODEL_ID`, `CONDUCTOR_LLM_TIMEOUT`, `CONDUCTOR_DB_PATH`.
+`CONDUCTOR_MODEL_ID`, `CONDUCTOR_LLM_TIMEOUT`, `CONDUCTOR_DB_PATH`,
+`PHI_MASKING_SERVICE_URL`, `CONDUCTOR_MASKING_TIMEOUT`, and
+`CONDUCTOR_MASK_MIN_SCORE`.
+
+The PHI masking service also reads `CONDUCTOR_PHI_DB_PATH` for its separate vault
+database. `CONDUCTOR_MASK_MIN_SCORE` defaults to `0.5`, intentionally biased
+toward masking when AWS detector confidence is uncertain.
 
 The request factory is configured directly through environment variables in
 `docker-compose.yml`: `REQUEST_FACTORY_SEED`, random interval min/max, optional
 fixed interval override, max generated requests, category weights, language
 weights, and optional separate generation model id.
 
+## PHI masking limitations and hardening notes
+
+- Comprehend Medical `DetectPHI` is English-only. Spanish requests still use
+  Comprehend PII detection for names, IDs, phones, addresses, and emails; Spanish
+  clinical-term PHI via Translate plus offset mapping is a next-step item.
+- The service fails closed. If AWS detection or the PHI vault write fails, intake
+  rejects the request instead of passing raw text downstream.
+- The role switcher is a demo control, not real authentication. Production would
+  enforce roles through an identity provider and service-to-service auth.
+- The vault is isolated in its own database table and service. Production should
+  encrypt `phi_vault.value` with KMS or envelope encryption and use managed audit
+  retention.
+- The masking service is intentionally internal-only in Docker Compose. It can be
+  extracted to its own deployable service without changing the Conductor API
+  contract.
+
 ## Verification status
 
 The deterministic remediation pipeline (branches, gates, audit, SSE envelope)
 has been verified structurally in the local build environment. Full end-to-end
-request processing now requires live Bedrock credentials because classification
-is AI-only. Before recording the demo, run the 12-request sample inbox with the
+request processing now requires live Bedrock plus Comprehend/Comprehend Medical
+credentials. Before recording the demo, run the 12-request sample inbox with the
 target model and confirm all five branches fire, both languages classify
 correctly, both safety gates trigger (clinical: REQ-1005/1011; low-confidence:
 REQ-1008), the SSE stream emits per-request decisions + live dashboard, and the
 audit log is written and queryable.
+
+Masking-specific verification:
+
+- `docker compose up --build` starts `phi-masker` with no host port and the API
+  proxies `GET /api/masking/health`.
+- Spanish sample requests such as REQ-1001/1007 show masked names and account
+  tokens before classification.
+- English clinical samples such as REQ-1011 pass through Comprehend Medical on
+  the masking service path.
+- The Bedrock classifier prompt contains masked subject/body text only.
+- `data/db/conductor_audit.db` contains masked request text and `mask_id`; raw
+  values exist only in `data/phi-db/phi_vault.db`.
+- `POST /api/masking/resolve` with `role=agent` is denied and logged; the same
+  call with `role=supervisor` and a reason returns values and logs the grant.
 
 ## Sample data
 

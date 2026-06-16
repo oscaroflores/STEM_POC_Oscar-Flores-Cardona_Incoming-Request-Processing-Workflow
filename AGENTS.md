@@ -6,10 +6,10 @@ The immediate assignment is to build the **Incoming Request Processing Workflow*
 
 ## Source Context
 
-Before making major product, architecture, or copy decisions, read these source files from the parent directory:
+Before making major product, architecture, or copy decisions, read these source files from this repo:
 
-- `../FirstSource_POC_Competition_Instructions.md`
-- `../PoC-Options/Incoming_Request_Processing_Workflow.docx`
+- `docs/FirstSource_POC_Competition_Instructions.md`
+- `docs/PoC-Options/Incoming_Request_Processing_Workflow.docx`
 
 The first file contains the broader hiring and competition context from the email thread. The second file is the official selected POC brief.
 
@@ -56,6 +56,7 @@ Meeting the brief is not enough. Prefer features that attack the company's impli
 - At least four remediation branches if feasible.
 - Classification confidence score.
 - Human-in-the-loop routing for urgent, sensitive, or low-confidence cases.
+- PHI tokenization at platform intake before AI/model calls or operational persistence.
 - Audit trail with timestamp, classification, urgency, rationale, and actions taken.
 - SLA/follow-up timers or flags.
 - Dashboard or operations summary showing request volume, urgency mix, branch outcomes, and unresolved escalations.
@@ -86,15 +87,19 @@ The system can support more than four branches, but do not add complexity that w
 - Route sensitive or urgent healthcare issues to a human reviewer.
 - Avoid implying the AI makes clinical decisions.
 - Use sample or synthetic data only. Do not use proprietary, private, or real patient data.
+- Treat PHI masking as a platform-edge control: no raw member identifiers should reach Bedrock, the operational database, audit rows, SSE payloads, or frontend responses.
 
 ## Current Implementation Stack
 
 The project has moved beyond the original default suggestion. The current implementation is:
 
 - Python/FastAPI backend for the workflow API.
+- Internal Python/FastAPI PHI masking microservice in `Submission_Incoming_Request_Processing_Workflow/phi_masking_service/`. It is Docker-network internal only, has no host port, and is reached by the main API through `PHI_MASKING_SERVICE_URL`.
+- AWS-native PHI/PII detection in the masking service: Amazon Comprehend `DetectDominantLanguage` and `DetectPiiEntities` for English/Spanish, plus Amazon Comprehend Medical `DetectPHI` for English clinical PHI. There is no regex fallback.
 - Bedrock AI as the only classifier; no deterministic classifier fallback.
-- SQLite operational database using Python's built-in `sqlite3`: durable inbox state, current case records, ordered branch actions, supervisor overrides, and append-only audit log.
-- Docker Compose local deployment for the backend, persistent SQLite bind mount, and SQLite web UI.
+- SQLite operational database using Python's built-in `sqlite3`: durable masked inbox state, current masked case records, ordered branch actions, supervisor overrides, and append-only audit log. It stores `mask_id`, token metadata, and de-identified text only.
+- Separate SQLite PHI vault database owned by the PHI masking microservice: `phi_vault`, `phi_access_log`, and `masking_requests`. Raw token values live only here.
+- Docker Compose local deployment for the internal `phi-masker`, FastAPI workflow backend, persistent operational SQLite bind mount, separate PHI vault bind mount, and SQLite web UI for the operational DB.
 - Opt-in request factory microservice in `request_factory.py`, enabled with `docker compose --profile factory up --build`, that uses seeded randomness to choose category/language/channel, uses Bedrock to generate synthetic healthcare contact-center requests, and queues them through `POST /api/inbox`.
 - Bilingual JSON sample inbox with synthetic Spanish/English requests.
 - Standalone Next.js App Router frontend in `Submission_Incoming_Request_Processing_Workflow/frontend/`.
@@ -141,14 +146,15 @@ For the latest tactical checklist, read `../TODO.md` from inside the submission 
 Current UI status:
 
 - Next.js operations UI exists in `frontend/`.
-- It includes the live inbox board, dashboard summary, escalation queue, detail sheet, management override form, and ad-hoc request form.
-- The backend now persists operational state in SQLite tables: `inbox_requests`, `cases`, `case_actions`, `case_overrides`, and `audit_log`.
+- It includes the live inbox board, dashboard summary, escalation queue, detail sheet, management override form, ad-hoc request form, role switcher, masking gateway chip, PHI token badges, and supervisor-only reveal flow.
+- The backend now persists masked operational state in SQLite tables: `inbox_requests`, `cases`, `case_actions`, `case_overrides`, and `audit_log`.
+- The PHI masking microservice persists vaulted raw token values separately in `data/phi-db/phi_vault.db` and audits denied/granted reveal attempts in `phi_access_log`.
 - `GET /api/cases` and `GET /api/overrides` hydrate persisted case and override state after browser refresh.
 - `POST /api/inbox` queues generated or manual requests without immediately processing them, preserving the normal inbox/SSE workflow.
-- Docker Compose runs the FastAPI backend with `CONDUCTOR_DB_PATH=/app/db/conductor_audit.db`, persists the DB to `data/db/conductor_audit.db`, and exposes SQLite web at `http://localhost:8080`.
+- Docker Compose runs `phi-masker` internally with `CONDUCTOR_PHI_DB_PATH=/app/phi-db/phi_vault.db`, then the FastAPI backend with `CONDUCTOR_DB_PATH=/app/db/conductor_audit.db` and `PHI_MASKING_SERVICE_URL=http://phi-masker:8100`. Operational DB persists to `data/db/conductor_audit.db`, PHI vault persists to `data/phi-db/phi_vault.db`, and SQLite web exposes only the operational DB at `http://localhost:8080`.
 - Docker Compose has an opt-in `request-factory` profile. The factory chooses category/language/channel using seeded randomness, asks Bedrock to write the synthetic request, and waits a random 4-20 seconds between requests by default. It can be tuned with `REQUEST_FACTORY_SEED`, `REQUEST_FACTORY_MIN_INTERVAL_SECONDS`, `REQUEST_FACTORY_MAX_INTERVAL_SECONDS`, `REQUEST_FACTORY_INTERVAL_SECONDS`, `REQUEST_FACTORY_MAX_REQUESTS`, category weights, language weights, and channel weights.
 - Frontend verification passed: `npm run typecheck`, `npm run build`, and `npm audit --omit=dev`.
-- Live frontend-to-backend verification still needs to be completed against a running API.
+- Full live masking/classification verification still requires AWS credentials with Bedrock, Comprehend, and Comprehend Medical permissions.
 
 Current repository status:
 
@@ -187,8 +193,9 @@ The demo should tell a compact business story:
 3. The prototype classifies each request by type and urgency.
 4. Each classification triggers a different remediation workflow.
 5. High-risk or uncertain requests are routed to humans.
-6. The system produces draft responses, routing notes, follow-up flags, SLA markers, and an audit trail.
-7. Operations leaders get a clear summary of request volume, priority, and pending escalations.
+6. PHI is tokenized at intake so the classifier and operational workflow see only de-identified text.
+7. The system produces draft responses, routing notes, follow-up flags, SLA markers, and an audit trail.
+8. Operations leaders get a clear summary of request volume, priority, pending escalations, and masking gateway status.
 
 Keep the demo under 3 minutes. Script around business value, not just UI clicks.
 
@@ -197,15 +204,21 @@ Keep the demo under 3 minutes. Script around business value, not just UI clicks.
 Before claiming completion:
 
 - Run the app locally.
-- For the database-backed local deployment, run `docker compose up --build` from `Submission_Incoming_Request_Processing_Workflow/` and verify the API at `http://localhost:8000` plus SQLite web at `http://localhost:8080`.
+- For the database-backed local deployment, run `docker compose up --build` from `Submission_Incoming_Request_Processing_Workflow/` and verify the API at `http://localhost:8000` plus SQLite web at `http://localhost:8080`. Confirm `phi-masker` is healthy internally and has no host port.
 - Run the backend API and the Next.js frontend together.
+- Confirm every intake path reaches the PHI masking service before classification or operational persistence.
+- Confirm `GET /api/masking/health`, `POST /api/masking/resolve`, and `GET /api/phi-access-log` proxy through the main API.
 - Process representative examples for every branch.
+- Confirm Bedrock classifier input contains masked subject/body text only.
 - Confirm the expected classification, urgency, actions, and generated outputs appear.
 - Confirm the frontend live board drains the inbox through SSE.
 - Confirm the ad-hoc form calls `POST /api/process` successfully.
 - Confirm the management override control calls `POST /api/override` successfully.
 - Confirm the dashboard and escalation queue update during a live run.
 - Confirm SQLite output is created and readable: inbox rows, processed case rows, case action rows, override rows, and append-only audit rows.
+- Confirm operational SQLite contains only de-identified request text plus `mask_id` and token metadata; raw values should exist only in `data/phi-db/phi_vault.db`.
+- Confirm `role=agent` PHI reveal is denied and logged; `role=supervisor` with a reason returns values and logs the grant.
+- Confirm Spanish PII is masked through Comprehend PII and English clinical PHI is augmented by Comprehend Medical.
 - If using the request factory, run `docker compose --profile factory up --build`, confirm generated `FACT-*` rows appear in `GET /api/inbox`, and confirm `GET /api/process-stream` processes them through the same classifier, remediation branches, and audit log.
 - Confirm frontend checks pass: `npm run typecheck`, `npm run build`, and `npm audit --omit=dev` from `frontend/`.
 - Confirm the README setup steps are accurate.

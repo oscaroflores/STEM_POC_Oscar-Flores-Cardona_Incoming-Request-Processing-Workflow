@@ -1,9 +1,8 @@
 "use client";
 
 import * as React from "react";
-import { Bot, CheckCircle2, ClipboardList, Route, ShieldAlert } from "lucide-react";
+import { Bot, CheckCircle2, ClipboardList, Eye, LockKeyhole, Route, ShieldAlert } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Progress } from "@/components/ui/progress";
@@ -12,7 +11,8 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Separator } from "@/components/ui/separator";
 import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle } from "@/components/ui/sheet";
 import { Textarea } from "@/components/ui/textarea";
-import { LanguageBadge, TypeBadge, UrgencyBadge } from "@/components/status-badges";
+import { LanguageBadge, StatusField, TypeBadge, UrgencyBadge } from "@/components/status-badges";
+import { resolveMasking } from "@/lib/api";
 import type { OverridePayload, ProcessedRequest } from "@/lib/types";
 import { formatPercent, titleize } from "@/lib/utils";
 
@@ -22,18 +22,24 @@ type RequestDetailSheetProps = {
   onOpenChange: (open: boolean) => void;
   onOverride: (payload: OverridePayload) => Promise<void>;
   overrideNote?: string;
+  role?: string;
 };
 
-export function RequestDetailSheet({ request, open, onOpenChange, onOverride, overrideNote }: RequestDetailSheetProps) {
+export function RequestDetailSheet({ request, open, onOpenChange, onOverride, overrideNote, role = "agent" }: RequestDetailSheetProps) {
   const [action, setAction] = React.useState<OverridePayload["action"]>("send_to_human");
   const [note, setNote] = React.useState("");
   const [status, setStatus] = React.useState<string | null>(null);
   const [isSubmitting, setIsSubmitting] = React.useState(false);
+  const [resolvedValues, setResolvedValues] = React.useState<Record<string, string>>({});
+  const [resolveStatus, setResolveStatus] = React.useState<string | null>(null);
+  const [isResolving, setIsResolving] = React.useState(false);
 
   React.useEffect(() => {
     setAction("send_to_human");
     setNote("");
     setStatus(null);
+    setResolvedValues({});
+    setResolveStatus(null);
   }, [request?.request.id]);
 
   if (!request) {
@@ -55,21 +61,48 @@ export function RequestDetailSheet({ request, open, onOpenChange, onOverride, ov
     }
   }
 
+  async function revealPhi() {
+    if (!request?.request.mask_id) return;
+    const reason = window.prompt("Reason for PHI reveal? This access will be logged.");
+    if (!reason) return;
+    setIsResolving(true);
+    setResolveStatus(null);
+    try {
+      const result = await resolveMasking({ mask_id: request.request.mask_id, role, reason });
+      if (!result.authorized) {
+        setResolveStatus("Reveal denied for this role. Attempt logged.");
+        return;
+      }
+      const rows = Array.isArray(result.revealed) ? result.revealed : result.revealed ? [result.revealed] : [];
+      setResolvedValues(Object.fromEntries(rows.map((item) => [item.token, item.value])));
+      setResolveStatus("PHI resolved · access logged");
+    } catch (error) {
+      setResolveStatus(error instanceof Error ? error.message : "Unable to resolve PHI.");
+    } finally {
+      setIsResolving(false);
+    }
+  }
+
   const entities = Object.entries(request.type_decision.key_entities ?? {});
+  const hydrateText = (value: string | null | undefined) => {
+    if (!value) return "";
+    return Object.entries(resolvedValues).reduce((text, [token, original]) => text.split(token).join(original), value);
+  };
+  const phiCount = request.request.phi?.count ?? 0;
 
   return (
     <Sheet open={open} onOpenChange={onOpenChange}>
       <SheetContent className="flex flex-col overflow-hidden p-0 sm:max-w-2xl">
         <SheetHeader className="border-b bg-card px-6 py-5">
-          <div className="mb-2 flex flex-wrap gap-2">
+          <div className="mb-2 grid grid-cols-2 gap-2 sm:grid-cols-4">
             <TypeBadge type={request.type_decision.type} />
             <UrgencyBadge urgency={request.type_decision.urgency} />
             <LanguageBadge language={request.type_decision.language} />
-            {request.remediation.requires_human_review ? <Badge variant="destructive">Human review</Badge> : null}
+            <StatusField label="Review" value={request.remediation.requires_human_review ? "Human" : "Auto"} tone={request.remediation.requires_human_review ? "red" : "green"} />
           </div>
-          <SheetTitle>{request.request.subject}</SheetTitle>
+          <SheetTitle>{hydrateText(request.request.subject)}</SheetTitle>
           <SheetDescription>
-            {request.request.id} · {request.request.member_name || "Member"} · {titleize(request.request.channel)}
+            {request.request.id} · {hydrateText(request.request.member_name) || "Member"} · {titleize(request.request.channel)}
           </SheetDescription>
         </SheetHeader>
 
@@ -78,9 +111,30 @@ export function RequestDetailSheet({ request, open, onOpenChange, onOverride, ov
             <section className="rounded-lg border bg-muted/35 p-4">
               <div className="mb-2 flex items-center gap-2 text-sm font-semibold">
                 <ClipboardList className="h-4 w-4 text-primary" />
-                Original request
+                De-identified request
               </div>
-              <p className="whitespace-pre-wrap text-sm leading-6 text-muted-foreground">{request.request.body}</p>
+              <div className="mb-3 inline-flex items-center gap-1.5 rounded border border-cyan-100 bg-cyan-50 px-2 py-1 text-[11px] font-medium text-cyan-950">
+                <LockKeyhole className="h-3 w-3" />
+                {phiCount} PHI tokens vaulted · PHI not sent to model
+              </div>
+              <p className="whitespace-pre-wrap text-sm leading-6 text-muted-foreground">{hydrateText(request.request.body)}</p>
+              <div className="mt-4 rounded-md border border-dashed bg-card p-3 text-sm">
+                <div className="mb-2 flex items-center gap-2 font-semibold">
+                  <Eye className="h-4 w-4 text-primary" />
+                  Vault reveal
+                </div>
+                <p className="mb-3 text-xs leading-5 text-muted-foreground">
+                  Reveal is supervisor/compliance only. Values are resolved in this sheet and every attempt is logged by the masking service.
+                </p>
+                {role === "supervisor" ? (
+                  <Button type="button" size="sm" variant="destructive" onClick={revealPhi} disabled={!request.request.mask_id || isResolving}>
+                    {isResolving ? "Resolving" : "Reveal PHI for review"}
+                  </Button>
+                ) : (
+                  <div className="text-xs font-medium text-muted-foreground">Current role: Agent · reveal hidden</div>
+                )}
+                {resolveStatus ? <p className="mt-2 text-xs font-medium text-red-800">{resolveStatus}</p> : null}
+              </div>
             </section>
 
             <section className="space-y-4">
@@ -147,9 +201,9 @@ export function RequestDetailSheet({ request, open, onOpenChange, onOverride, ov
                       </div>
                       <div>
                         <div className="text-sm font-medium">{titleize(actionItem.step)}</div>
-                        <div className="text-sm leading-6 text-muted-foreground">{actionItem.detail}</div>
-                      </div>
-                    </div>
+                    <div className="text-sm leading-6 text-muted-foreground">{hydrateText(actionItem.detail)}</div>
+                  </div>
+                </div>
                   ))}
                 </div>
               </div>
@@ -161,7 +215,10 @@ export function RequestDetailSheet({ request, open, onOpenChange, onOverride, ov
                 Generated acknowledgement draft
               </div>
               <div className="rounded-lg border bg-card p-4">
-                <pre className="whitespace-pre-wrap font-sans text-sm leading-6 text-muted-foreground">{request.remediation.draft_response}</pre>
+                <pre className="whitespace-pre-wrap font-sans text-sm leading-6 text-muted-foreground">{hydrateText(request.remediation.draft_response)}</pre>
+                <p className="mt-3 rounded-md bg-muted/45 p-2 text-xs leading-5 text-muted-foreground">
+                  Stored drafts keep tokens; recipient values are re-hydrated only at an authorized send/review step.
+                </p>
               </div>
             </section>
 

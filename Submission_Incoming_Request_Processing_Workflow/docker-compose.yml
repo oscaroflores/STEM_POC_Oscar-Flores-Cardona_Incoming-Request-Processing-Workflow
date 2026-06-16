@@ -1,15 +1,44 @@
 services:
+  phi-masker:
+    build:
+      context: .
+    container_name: conductor-phi-masker
+    environment:
+      - CONDUCTOR_PHI_DB_PATH=/app/phi-db/phi_vault.db
+      - AWS_REGION=${AWS_REGION:-us-east-1}
+      - CONDUCTOR_MASK_MIN_SCORE=${CONDUCTOR_MASK_MIN_SCORE:-0.5}
+      - AWS_ACCESS_KEY_ID
+      - AWS_SECRET_ACCESS_KEY
+      - AWS_SESSION_TOKEN
+      - AWS_PROFILE
+    volumes:
+      - ./data/phi-db:/app/phi-db
+      - ${HOME}/.aws:/root/.aws
+    command: ["uvicorn", "phi_masking_service.main:app", "--host", "0.0.0.0", "--port", "8100"]
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8100/health', timeout=2)"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+      start_period: 10s
+
   api:
     build:
       context: .
     container_name: conductor-api
     ports:
       - "8000:8000"
+    depends_on:
+      phi-masker:
+        condition: service_healthy
     environment:
       - CONDUCTOR_DB_PATH=/app/db/conductor_audit.db
+      - PHI_MASKING_SERVICE_URL=http://phi-masker:8100
       - AWS_REGION=${AWS_REGION:-us-east-1}
       - CONDUCTOR_MODEL_ID=${CONDUCTOR_MODEL_ID:-amazon.nova-lite-v1:0}
       - CONDUCTOR_LLM_TIMEOUT=${CONDUCTOR_LLM_TIMEOUT:-12}
+      - CONDUCTOR_MASKING_TIMEOUT=${CONDUCTOR_MASKING_TIMEOUT:-12}
+      - CONDUCTOR_MASK_MIN_SCORE=${CONDUCTOR_MASK_MIN_SCORE:-0.5}
       - CONDUCTOR_CONF_THRESHOLD=${CONDUCTOR_CONF_THRESHOLD:-0.70}
       - CONDUCTOR_PROCESS_DELAY=${CONDUCTOR_PROCESS_DELAY:-1.1}
       - AWS_ACCESS_KEY_ID

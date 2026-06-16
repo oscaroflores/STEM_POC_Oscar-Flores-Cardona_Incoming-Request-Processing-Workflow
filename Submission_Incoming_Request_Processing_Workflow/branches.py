@@ -118,12 +118,20 @@ def _draft_escalation(member, lang):
     )
 
 
+def _account_ref(j: TypeDecision) -> str:
+    return str(
+        j.key_entities.get("account_ref_token")
+        or j.key_entities.get("account_ref")
+        or "token-pending"
+    )
+
+
 # --------------------------------------------------------------------------- #
 # Branch handlers
 # --------------------------------------------------------------------------- #
 
 def _complaint(j: TypeDecision, member) -> RemediationResult:
-    ref = f"CMP-{j.key_entities.get('account_ref', '0000')}"
+    ref = f"CMP-{_account_ref(j)}"
     return RemediationResult(
         request_id="", branch=RequestType.COMPLAINT, urgency=j.urgency,
         assigned_team=team("senior_handler").name,
@@ -169,7 +177,7 @@ def _service(j: TypeDecision, member) -> RemediationResult:
 
 
 def _billing(j: TypeDecision, member) -> RemediationResult:
-    ref = f"BIL-{j.key_entities.get('account_ref', '0000')}"
+    ref = f"BIL-{_account_ref(j)}"
     return RemediationResult(
         request_id="", branch=RequestType.BILLING_DISPUTE, urgency=j.urgency,
         assigned_team=team("billing").name,

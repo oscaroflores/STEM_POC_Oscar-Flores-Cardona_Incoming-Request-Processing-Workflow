@@ -273,7 +273,7 @@ def main() -> None:
             result = _post_request(api_base_url, request)
             print(
                 f"queued {request.id} category={category} language={language} channel={channel} "
-                f"subject={request.subject!r} result={result['status']}",
+                f"mask_id={result.get('mask_id', 'pending')} result={result['status']}",
                 flush=True,
             )
         except Exception as exc:

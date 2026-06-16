@@ -30,6 +30,7 @@ from models import IncomingRequest
 import orchestrator
 import audit
 import config
+import masking_client
 
 app = FastAPI(title="Conductor — AI Intake Manager", version="1.0.0")
 
@@ -45,7 +46,8 @@ app.add_middleware(
 @app.on_event("startup")
 def _startup() -> None:
     audit.init_db()
-    audit.seed_inbox(_load_sample_inbox())
+    if audit.inbox_total_count() == 0:
+        audit.seed_inbox(_mask_all(_load_sample_inbox()))
 
 
 def _load_sample_inbox() -> list[IncomingRequest]:
@@ -55,10 +57,21 @@ def _load_sample_inbox() -> list[IncomingRequest]:
 
 def _load_inbox() -> list[IncomingRequest]:
     rows = audit.inbox_entries()
-    if not rows:
-        audit.seed_inbox(_load_sample_inbox())
+    if not rows and audit.inbox_total_count() == 0:
+        audit.seed_inbox(_mask_all(_load_sample_inbox()))
         rows = audit.inbox_entries()
     return [IncomingRequest(**item) for item in rows]
+
+
+def _mask_or_503(request: IncomingRequest) -> IncomingRequest:
+    try:
+        return masking_client.mask_request(request)
+    except masking_client.MaskingServiceError as exc:
+        raise HTTPException(status_code=503, detail=str(exc)) from exc
+
+
+def _mask_all(requests: list[IncomingRequest]) -> list[IncomingRequest]:
+    return [_mask_or_503(request) for request in requests]
 
 
 @app.get("/health")
@@ -72,7 +85,7 @@ def health() -> dict:
 
 
 @app.get("/api/inbox")
-def inbox() -> list[dict]:
+def inbox(role: str = "agent") -> list[dict]:
     return [r.model_dump() for r in _load_inbox()]
 
 
@@ -80,29 +93,29 @@ def inbox() -> list[dict]:
 def enqueue_inbox(request: IncomingRequest) -> dict:
     """Queue one generated/manual request without processing it immediately."""
     try:
-        return audit.enqueue_request(request)
+        return audit.enqueue_request(_mask_or_503(request))
     except ValueError as exc:
         raise HTTPException(status_code=409, detail=str(exc)) from exc
 
 
 @app.get("/api/cases")
-def cases() -> list[dict]:
+def cases(role: str = "agent") -> list[dict]:
     return audit.processed_cases()
 
 
 @app.get("/api/overrides")
-def overrides() -> dict[str, str]:
+def overrides(role: str = "agent") -> dict[str, str]:
     return audit.latest_overrides()
 
 
 @app.post("/api/process")
 def process(request: IncomingRequest) -> dict:
     """Process a single ad-hoc request (e.g. typed live into the UI)."""
-    return orchestrator.process_one(request).model_dump()
+    return orchestrator.process_one(_mask_or_503(request)).model_dump()
 
 
 @app.get("/api/process-stream")
-async def process_stream() -> StreamingResponse:
+async def process_stream(role: str = "agent") -> StreamingResponse:
     """Autonomously drain the seeded inbox, emitting one SSE event per request."""
 
     async def event_gen():
@@ -126,13 +139,54 @@ async def process_stream() -> StreamingResponse:
 
 
 @app.get("/api/dashboard")
-def dashboard() -> dict:
+def dashboard(role: str = "agent") -> dict:
     return audit.summary()
 
 
 @app.get("/api/audit")
-def audit_trail() -> list[dict]:
+def audit_trail(role: str = "agent") -> list[dict]:
     return audit.all_entries()
+
+
+@app.get("/api/masking/health")
+def masking_health() -> dict:
+    try:
+        return masking_client.health()
+    except masking_client.MaskingServiceError as exc:
+        raise HTTPException(status_code=503, detail=str(exc)) from exc
+
+
+class MaskingResolve(BaseModel):
+    mask_id: str
+    token: str | None = None
+    role: str = "agent"
+    reason: str = ""
+
+
+@app.post("/api/masking/resolve")
+def masking_resolve(payload: MaskingResolve) -> dict:
+    try:
+        return masking_client.resolve(
+            mask_id=payload.mask_id,
+            token=payload.token,
+            role=payload.role,
+            reason=payload.reason,
+        )
+    except masking_client.MaskingServiceError as exc:
+        raise HTTPException(status_code=503, detail=str(exc)) from exc
+
+
+@app.post("/api/reveal")
+def reveal(payload: MaskingResolve) -> dict:
+    return masking_resolve(payload)
+
+
+@app.get("/api/phi-access-log")
+def phi_access_log(role: str = "agent") -> list[dict]:
+    try:
+        return masking_client.access_log()
+    except masking_client.MaskingServiceError as exc:
+        raise HTTPException(status_code=503, detail=str(exc)) from exc
 
 
 class Override(BaseModel):
@@ -154,5 +208,5 @@ def override(o: Override) -> dict:
 @app.post("/api/reset")
 def reset() -> dict:
     audit.reset()
-    audit.seed_inbox(_load_sample_inbox())
+    audit.seed_inbox(_mask_all(_load_sample_inbox()))
     return {"status": "database reset and sample inbox reseeded"}

@@ -27,9 +27,12 @@ class Language(str, Enum):
 class IncomingRequest(BaseModel):
     id: str
     channel: str
+    mask_id: str | None = None
     member_name: str | None = None
     subject: str
     body: str
+    entities: dict = Field(default_factory=dict)
+    phi: dict = Field(default_factory=lambda: {"count": 0, "tokens": [], "kinds": {}})
 
 
 class TypeDecision(BaseModel):

@@ -37,8 +37,12 @@ def init_db() -> None:
                 request_id      TEXT NOT NULL,
                 processed_at    TEXT NOT NULL,
                 channel         TEXT,
+                mask_id         TEXT,
                 member_name     TEXT,
+                request_subject TEXT,
                 request_body    TEXT,
+                entities_json   TEXT,
+                phi_json        TEXT,
                 type            TEXT,
                 urgency         TEXT,
                 confidence      REAL,
@@ -60,9 +64,12 @@ def init_db() -> None:
             CREATE TABLE IF NOT EXISTS inbox_requests (
                 id           TEXT PRIMARY KEY,
                 channel      TEXT NOT NULL,
+                mask_id      TEXT,
                 member_name  TEXT,
                 subject      TEXT NOT NULL,
                 body         TEXT NOT NULL,
+                entities_json TEXT,
+                phi_json     TEXT,
                 source       TEXT NOT NULL DEFAULT 'sample',
                 status       TEXT NOT NULL DEFAULT 'queued',
                 created_at   TEXT NOT NULL,
@@ -75,7 +82,10 @@ def init_db() -> None:
             CREATE TABLE IF NOT EXISTS cases (
                 request_id            TEXT PRIMARY KEY,
                 processed_at          TEXT NOT NULL,
+                mask_id               TEXT,
                 request_json          TEXT NOT NULL,
+                entities_json         TEXT,
+                phi_json              TEXT,
                 type_decision_json    TEXT NOT NULL,
                 remediation_json      TEXT NOT NULL,
                 type                  TEXT NOT NULL,
@@ -134,6 +144,22 @@ def init_db() -> None:
         conn.execute(
             "CREATE INDEX IF NOT EXISTS idx_overrides_request_id ON case_overrides(request_id)"
         )
+        _ensure_column(conn, "audit_log", "mask_id", "TEXT")
+        _ensure_column(conn, "audit_log", "request_subject", "TEXT")
+        _ensure_column(conn, "audit_log", "entities_json", "TEXT")
+        _ensure_column(conn, "audit_log", "phi_json", "TEXT")
+        _ensure_column(conn, "inbox_requests", "mask_id", "TEXT")
+        _ensure_column(conn, "inbox_requests", "entities_json", "TEXT")
+        _ensure_column(conn, "inbox_requests", "phi_json", "TEXT")
+        _ensure_column(conn, "cases", "mask_id", "TEXT")
+        _ensure_column(conn, "cases", "entities_json", "TEXT")
+        _ensure_column(conn, "cases", "phi_json", "TEXT")
+
+
+def _ensure_column(conn: sqlite3.Connection, table: str, column: str, definition: str) -> None:
+    columns = {row["name"] for row in conn.execute(f"PRAGMA table_info({table})").fetchall()}
+    if column not in columns:
+        conn.execute(f"ALTER TABLE {table} ADD COLUMN {column} {definition}")
 
 
 def seed_inbox(requests: list[IncomingRequest]) -> None:
@@ -143,17 +169,20 @@ def seed_inbox(requests: list[IncomingRequest]) -> None:
         conn.executemany(
             """
             INSERT OR IGNORE INTO inbox_requests (
-                id, channel, member_name, subject, body, source, status,
-                created_at, updated_at
-            ) VALUES (?, ?, ?, ?, ?, 'sample', 'queued', ?, ?)
+                id, channel, mask_id, member_name, subject, body,
+                entities_json, phi_json, source, status, created_at, updated_at
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'sample', 'queued', ?, ?)
             """,
             [
                 (
                     r.id,
                     r.channel,
+                    r.mask_id,
                     r.member_name,
                     r.subject,
                     r.body,
+                    json.dumps(r.entities or {}, sort_keys=True),
+                    json.dumps(r.phi or {"count": 0, "tokens": [], "kinds": {}}, sort_keys=True),
                     now,
                     now,
                 )
@@ -175,16 +204,19 @@ def enqueue_request(request: IncomingRequest, source: str = "factory") -> dict:
         conn.execute(
             """
             INSERT INTO inbox_requests (
-                id, channel, member_name, subject, body, source, status,
-                created_at, updated_at
-            ) VALUES (?, ?, ?, ?, ?, ?, 'queued', ?, ?)
+                id, channel, mask_id, member_name, subject, body,
+                entities_json, phi_json, source, status, created_at, updated_at
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'queued', ?, ?)
             """,
             (
                 request.id,
                 request.channel,
+                request.mask_id,
                 request.member_name,
                 request.subject,
                 request.body,
+                json.dumps(request.entities or {}, sort_keys=True),
+                json.dumps(request.phi or {"count": 0, "tokens": [], "kinds": {}}, sort_keys=True),
                 source,
                 now,
                 now,
@@ -193,22 +225,49 @@ def enqueue_request(request: IncomingRequest, source: str = "factory") -> dict:
     return {
         "status": "queued",
         "id": request.id,
+        "mask_id": request.mask_id,
         "source": source,
         "created_at": now,
     }
+
+
+def _json_dict(value: str | None, default: dict) -> dict:
+    if not value:
+        return default.copy()
+    try:
+        parsed = json.loads(value)
+    except json.JSONDecodeError:
+        return default.copy()
+    return parsed if isinstance(parsed, dict) else default.copy()
+
+
+def _request_row(row: sqlite3.Row) -> dict:
+    data = dict(row)
+    data["entities"] = _json_dict(data.pop("entities_json", None), {})
+    data["phi"] = _json_dict(
+        data.pop("phi_json", None),
+        {"count": 0, "tokens": [], "kinds": {}},
+    )
+    return data
 
 
 def inbox_entries() -> list[dict]:
     with _conn() as conn:
         rows = conn.execute(
             """
-            SELECT id, channel, member_name, subject, body
+            SELECT id, channel, mask_id, member_name, subject, body,
+                   entities_json, phi_json
             FROM inbox_requests
             WHERE status != 'processed'
             ORDER BY created_at ASC, id ASC
             """
         ).fetchall()
-    return [dict(row) for row in rows]
+    return [_request_row(row) for row in rows]
+
+
+def inbox_total_count() -> int:
+    with _conn() as conn:
+        return conn.execute("SELECT COUNT(*) c FROM inbox_requests").fetchone()["c"]
 
 
 def _upsert_inbox(conn: sqlite3.Connection, request: IncomingRequest, status: str) -> None:
@@ -216,23 +275,29 @@ def _upsert_inbox(conn: sqlite3.Connection, request: IncomingRequest, status: st
     conn.execute(
         """
         INSERT INTO inbox_requests (
-            id, channel, member_name, subject, body, source, status,
-            created_at, updated_at
-        ) VALUES (?, ?, ?, ?, ?, 'ad_hoc', ?, ?, ?)
+            id, channel, mask_id, member_name, subject, body,
+            entities_json, phi_json, source, status, created_at, updated_at
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'ad_hoc', ?, ?, ?)
         ON CONFLICT(id) DO UPDATE SET
             channel = excluded.channel,
+            mask_id = excluded.mask_id,
             member_name = excluded.member_name,
             subject = excluded.subject,
             body = excluded.body,
+            entities_json = excluded.entities_json,
+            phi_json = excluded.phi_json,
             status = excluded.status,
             updated_at = excluded.updated_at
         """,
         (
             request.id,
             request.channel,
+            request.mask_id,
             request.member_name,
             request.subject,
             request.body,
+            json.dumps(request.entities or {}, sort_keys=True),
+            json.dumps(request.phi or {"count": 0, "tokens": [], "kinds": {}}, sort_keys=True),
             status,
             now,
             now,
@@ -246,14 +311,23 @@ def record(pr: ProcessedRequest) -> None:
         _upsert_inbox(conn, req, "processed")
         conn.execute(
             """INSERT INTO audit_log (
-                request_id, processed_at, channel, member_name, request_body,
+                request_id, processed_at, channel, mask_id, member_name,
+                request_subject, request_body, entities_json, phi_json,
                 type, urgency, confidence, language, clinical_flag, phi_present,
                 rationale, classifier_source, assigned_team,
                 requires_human_review, escalation_reason, actions_json,
                 draft_response
-            ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+            ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
             (
-                req.id, pr.processed_at, req.channel, req.member_name, req.body,
+                req.id,
+                pr.processed_at,
+                req.channel,
+                req.mask_id,
+                req.member_name,
+                req.subject,
+                req.body,
+                json.dumps(req.entities or {}, sort_keys=True),
+                json.dumps(req.phi or {"count": 0, "tokens": [], "kinds": {}}, sort_keys=True),
                 t.type.value, t.urgency.value, t.confidence, t.language.value,
                 int(t.clinical_flag), int(t.phi_present), t.rationale, t.source,
                 r.assigned_team, int(r.requires_human_review),
@@ -265,14 +339,17 @@ def record(pr: ProcessedRequest) -> None:
         conn.execute(
             """
             INSERT INTO cases (
-                request_id, processed_at, request_json, type_decision_json,
-                remediation_json, type, urgency, confidence, language,
+                request_id, processed_at, mask_id, request_json, entities_json,
+                phi_json, type_decision_json, remediation_json, type, urgency, confidence, language,
                 clinical_flag, phi_present, classifier_source, assigned_team,
                 requires_human_review, escalation_reason, status, updated_at
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'processed', ?)
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'processed', ?)
             ON CONFLICT(request_id) DO UPDATE SET
                 processed_at = excluded.processed_at,
+                mask_id = excluded.mask_id,
                 request_json = excluded.request_json,
+                entities_json = excluded.entities_json,
+                phi_json = excluded.phi_json,
                 type_decision_json = excluded.type_decision_json,
                 remediation_json = excluded.remediation_json,
                 type = excluded.type,
@@ -291,7 +368,10 @@ def record(pr: ProcessedRequest) -> None:
             (
                 req.id,
                 pr.processed_at,
+                req.mask_id,
                 json.dumps(req.model_dump()),
+                json.dumps(req.entities or {}, sort_keys=True),
+                json.dumps(req.phi or {"count": 0, "tokens": [], "kinds": {}}, sort_keys=True),
                 json.dumps(t.model_dump(mode="json")),
                 json.dumps(r.model_dump(mode="json")),
                 t.type.value,

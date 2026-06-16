@@ -11,9 +11,18 @@ export type Language = "en" | "es";
 export type IncomingRequest = {
   id: string;
   channel: string;
+  mask_id?: string | null;
   member_name?: string | null;
   subject: string;
   body: string;
+  entities?: Record<string, unknown>;
+  phi?: PhiSummary;
+};
+
+export type PhiSummary = {
+  count: number;
+  tokens: string[];
+  kinds: Record<string, number>;
 };
 
 export type TypeDecision = {
@@ -31,6 +40,32 @@ export type TypeDecision = {
 export type Action = {
   step: string;
   detail: string;
+};
+
+export type AuditEntry = {
+  id: number;
+  request_id: string;
+  processed_at: string;
+  channel?: string | null;
+  mask_id?: string | null;
+  member_name?: string | null;
+  request_subject?: string | null;
+  request_body?: string | null;
+  entities_json?: string | null;
+  phi_json?: string | null;
+  type: RequestType;
+  urgency: Urgency;
+  confidence: number | null;
+  language?: Language | null;
+  clinical_flag: number | boolean;
+  phi_present: number | boolean;
+  rationale?: string | null;
+  classifier_source?: string | null;
+  assigned_team?: string | null;
+  requires_human_review: number | boolean;
+  escalation_reason?: string | null;
+  actions_json?: string | null;
+  draft_response?: string | null;
 };
 
 export type RemediationResult = {
@@ -69,6 +104,30 @@ export type HealthStatus = {
   confidence_threshold: number;
 };
 
+export type MaskingHealth = {
+  status: string;
+  service: string;
+  aws_region: string;
+  min_score: number;
+  tokens_vaulted: number;
+  requests_masked: number;
+};
+
+export type PhiAccessEntry = {
+  id: number;
+  mask_id: string;
+  token?: string | null;
+  actor_role: string;
+  reason?: string | null;
+  authorized: number | boolean;
+  accessed_at: string;
+};
+
+export type MaskingResolveResult = {
+  authorized: boolean;
+  revealed: null | { token: string; kind: string; value: string } | Array<{ token: string; kind: string; value: string }>;
+};
+
 export type StreamPayload =
   | {
       index: number;
@@ -87,4 +146,5 @@ export type OverridePayload = {
 
 export type OverrideResult = OverridePayload & {
   status: string;
+  created_at: string;
 };

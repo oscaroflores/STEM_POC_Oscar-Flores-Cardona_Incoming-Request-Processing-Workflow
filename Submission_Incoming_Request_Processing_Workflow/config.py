@@ -27,6 +27,17 @@ BEDROCK_MODEL_ID: str = os.getenv(
 BEDROCK_TIMEOUT_SECONDS: float = float(os.getenv("CONDUCTOR_LLM_TIMEOUT", "12"))
 
 
+# --- PHI masking gateway -----------------------------------------------------
+# The workflow API talks to this internal service before classification or
+# persistence. Docker Compose points it at http://phi-masker:8100; local dev can
+# run the masking service on localhost:8100.
+PHI_MASKING_SERVICE_URL: str = os.getenv(
+    "PHI_MASKING_SERVICE_URL", "http://localhost:8100"
+).rstrip("/")
+MASKING_TIMEOUT_SECONDS: float = float(os.getenv("CONDUCTOR_MASKING_TIMEOUT", "12"))
+MASK_MIN_SCORE: float = float(os.getenv("CONDUCTOR_MASK_MIN_SCORE", "0.5"))
+
+
 # --- Safety gates -----------------------------------------------------------
 # Any request the AI manager is less than this confident about is force-routed
 # to human review, regardless of its predicted type. Uncertainty is made visible

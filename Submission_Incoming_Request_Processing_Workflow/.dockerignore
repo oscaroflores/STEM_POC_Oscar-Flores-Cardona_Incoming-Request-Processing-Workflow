@@ -12,6 +12,8 @@ conductor_audit.db
 *.sqlite3
 data/db/*
 !data/db/.gitkeep
+data/phi-db/*
+!data/phi-db/.gitkeep
 frontend/node_modules/
 frontend/.next/
 frontend/out/
