@@ -1,7 +1,7 @@
 import { ShieldAlert } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { Badge } from "@/components/ui/badge";
+import { StatusField } from "@/components/status-badges";
 import type { ProcessedRequest } from "@/lib/types";
 import { formatPercent } from "@/lib/utils";
 
@@ -30,7 +30,7 @@ export function EscalationQueue({ items, onSelect }: EscalationQueueProps) {
                   <div className="text-sm font-semibold">{item.request.subject}</div>
                   <div className="text-xs text-muted-foreground">{item.request.id} · {item.request.member_name || "Member"}</div>
                 </div>
-                <Badge variant="destructive">{formatPercent(item.type_decision.confidence)}</Badge>
+                <StatusField label="Confidence" value={formatPercent(item.type_decision.confidence)} attention className="shrink-0" />
               </div>
               <p className="line-clamp-2 text-xs leading-5 text-muted-foreground">
                 {item.remediation.escalation_reason || item.type_decision.rationale}

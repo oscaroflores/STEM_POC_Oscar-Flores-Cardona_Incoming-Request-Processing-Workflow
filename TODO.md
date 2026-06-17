@@ -13,12 +13,17 @@ Legend: `[x]` done · `[ ]` todo · `[~]` partial · `[?]` decision needed
 
 - [x] Backend engine: Bedrock AI classifier, 5 branches, 2 safety gates, audit log, orchestrator
 - [x] FastAPI API incl. live SSE inbox-draining stream
+- [x] SQLite operational database: durable inbox state, processed cases, ordered case actions, supervisor overrides, and append-only audit log
+- [x] Docker Compose local deployment: FastAPI backend + persistent SQLite bind mount + SQLite web UI
 - [x] Bilingual sample inbox (12 requests, all branches + clinical + low-confidence edge cases)
 - [x] README v1 (thesis, architecture, branch table, run instructions)
 - [x] Deterministic classifier removed; classification is Bedrock AI-only to align with the brief's "must use AI to classify" requirement
 - [x] Standalone **Next.js operations UI** created in `Submission_Incoming_Request_Processing_Workflow/frontend/`
+- [x] Request History page combines live inbox, current cases, audit history, and supervisor override controls in one compliance workspace
 - [x] Frontend checks passed: `npm run typecheck`, `npm run build`, `npm audit --omit=dev`
 - [x] README updated with frontend setup and UI coverage notes
+- [x] README updated with SQLite database schema, endpoints, and reset behavior
+- [x] README updated with Docker Compose backend/database deployment steps
 - [x] Git repository initialized at project root with first commit `771e034 Initial Conductor POC implementation`
 
 ---
@@ -32,7 +37,8 @@ Legend: `[x]` done · `[ ]` todo · `[~]` partial · `[?]` decision needed
   - [x] Escalations / Needs-Review queue (clinical + low-confidence cases)
   - [x] Management override control (calls `POST /api/override`)
   - [x] Ad-hoc request form (live typed input → `POST /api/process`)
-- [~] Wire frontend to backend (base URL/env implemented; run live backend + frontend together and verify SSE/process/override)
+  - [x] Request History / supervisor compliance log (review AI decision, rationale, generated actions, human-review/PHI/clinical flags, and record overrides)
+- [~] Wire frontend to backend (base URL/env + persisted `/api/cases` and `/api/overrides` implemented; run live backend + frontend together and verify SSE/process/override)
 - [~] Polish pass: branding, healthcare-ops look, bilingual labels (Notion-style UI implemented; exact TeleMedik brand tokens still need manual visual confirmation)
 - [ ] Capture UI screenshots after a clean live run: board, detail sheet, dashboard, escalation queue
 - [ ] **3-minute screen recording** following the demo script (show ≥3 branches incl. a Spanish request + a clinical escalation)
@@ -53,7 +59,7 @@ Legend: `[x]` done · `[ ]` todo · `[~]` partial · `[?]` decision needed
 
 - [x] Sample input requests (≥1 per branch) — `data/sample_requests.json`
 - [x] README (workflow design, remediation strategies, tools)
-- [~] Sample outputs/logs — verified in terminal; **need clean per-branch output screenshots or a saved log file** as an artifact
+- [~] Sample outputs/logs — SQLite write path verified in terminal; **need clean per-branch output screenshots or a saved log file** as an artifact
 - [~] Update README with frontend setup + screenshots once UI exists (setup added; screenshots still needed)
 - [ ] Add frontend screenshots or saved output artifacts to the final package
 - [~] GitHub repo (push) and/or hosted app link (local git repo initialized and committed; remote/published link still needed if selected)
@@ -70,7 +76,7 @@ Legend: `[x]` done · `[ ]` todo · `[~]` partial · `[?]` decision needed
 
 ## Blockers / external dependencies
 
-- [ ] Confirm backend package structure is complete before live UI verification. Current checked-in root files import `models`, `orchestrator`, and `teams`; ensure those modules exist in the runnable backend package/path used for demo.
+- [x] Confirm backend package structure is complete before live UI verification. Root modules import correctly through `.venv/bin/python`.
 - [ ] **Test the live Bedrock path** with real AWS creds (could not be exercised in the offline build env) — confirm model id, region, JSON reliability under the chosen model
 - [ ] Confirm AWS Bedrock model access is enabled in the target account/region
 
@@ -84,7 +90,10 @@ Legend: `[x]` done · `[ ]` todo · `[~]` partial · `[?]` decision needed
 - [ ] Confirm ad-hoc request form calls `POST /api/process` successfully
 - [ ] Confirm management override calls `POST /api/override` successfully
 - [x] Confirm frontend checks pass: `npm run typecheck`, `npm run build`, `npm audit --omit=dev`
-- [ ] Confirm audit log writes and is readable
+- [x] Confirm SQLite schema initializes and sample inbox seeds locally
+- [x] Confirm SQLite write path for cases, actions, overrides, dashboard summary, and append-only audit rows using a temporary database
+- [x] Confirm Docker Compose launches backend and SQLite web UI locally
+- [ ] Confirm live Bedrock-processed SQLite rows after a real end-to-end UI run
 - [ ] Confirm README setup steps are accurate
 - [ ] Confirm deck matches the required 5-slide structure
 - [ ] Confirm no real/proprietary patient data anywhere

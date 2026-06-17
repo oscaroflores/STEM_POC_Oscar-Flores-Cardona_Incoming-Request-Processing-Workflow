@@ -18,4 +18,5 @@ out/
 .env.*
 !.env.example
 PoC-Options/
-*.md
+docs/
+TODO.md

@@ -2,9 +2,10 @@
 
 import * as React from "react";
 import Link from "next/link";
-import { ArrowLeft, ClipboardPlus, Stethoscope } from "lucide-react";
+import { ArrowLeft, ClipboardPlus } from "lucide-react";
 import { AdHocRequestForm } from "@/components/ad-hoc-request-form";
 import { AppRail } from "@/components/app-rail";
+import { BrandLogoMark } from "@/components/brand-logo-mark";
 import { RequestCard } from "@/components/request-card";
 import { RequestDetailSheet } from "@/components/request-detail-sheet";
 import { Button } from "@/components/ui/button";
@@ -44,9 +45,7 @@ export function CreateRequestConsole() {
       <section className="min-w-0 flex-1 border bg-[#fbfaf6]/92 shadow-[0_1px_1px_rgba(31,35,40,0.04),0_30px_90px_rgba(31,35,40,0.08)]">
         <header className="flex flex-wrap items-center justify-between gap-3 border-b bg-card/70 px-4 py-3 backdrop-blur-xl sm:px-5">
           <div className="flex items-center gap-3">
-            <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-primary text-primary-foreground shadow-sm">
-              <Stethoscope className="h-5 w-5" />
-            </div>
+            <BrandLogoMark alt="Conductor" />
             <div>
               <div className="text-lg font-semibold tracking-tight">Conductor</div>
               <div className="text-xs text-muted-foreground">TeleMedik POC</div>

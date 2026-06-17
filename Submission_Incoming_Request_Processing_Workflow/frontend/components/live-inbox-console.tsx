@@ -18,10 +18,10 @@ import {
   Route,
   Search,
   ShieldAlert,
-  Stethoscope,
   UserRound,
 } from "lucide-react";
 import { AppRail } from "@/components/app-rail";
+import { BrandLogoMark } from "@/components/brand-logo-mark";
 import { LanguageBadge, StatusField, TypeBadge, UrgencyBadge } from "@/components/status-badges";
 import { RequestDetailSheet } from "@/components/request-detail-sheet";
 import { Button } from "@/components/ui/button";
@@ -32,6 +32,7 @@ import { Progress } from "@/components/ui/progress";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { API_BASE_URL, getAudit, getCases, getDashboard, getHealth, getInbox, getMaskingHealth, getOverrides, recordOverride } from "@/lib/api";
+import { isDashboardEqual, setIfChanged } from "@/lib/state-utils";
 import type { Action, AuditEntry, DashboardSummary, HealthStatus, IncomingRequest, MaskingHealth, OverridePayload, PhiSummary, ProcessedRequest, Urgency } from "@/lib/types";
 import { cn, formatPercent, titleize } from "@/lib/utils";
 
@@ -55,7 +56,7 @@ const emptyDashboard: DashboardSummary = {
   generated_at: new Date().toISOString(),
 };
 
-const POLL_INTERVAL_MS = 4000;
+const POLL_INTERVAL_MS = 15000;
 
 export function LiveInboxConsole() {
   const [health, setHealth] = React.useState<HealthStatus | null>(null);
@@ -118,13 +119,13 @@ export function LiveInboxConsole() {
         getAudit(role),
         getOverrides(role),
       ]);
-      setHealth(healthResult);
-      setMaskingHealth(maskingHealthResult);
-      setIncoming(inboxResult);
-      setDashboard(dashboardResult);
-      setProcessed(caseResult);
-      setAuditEntries(auditResult);
-      setOverrides(overrideResult);
+      setIfChanged(setHealth, healthResult);
+      setIfChanged(setMaskingHealth, maskingHealthResult);
+      setIfChanged(setIncoming, inboxResult);
+      setIfChanged(setDashboard, dashboardResult, isDashboardEqual);
+      setIfChanged(setProcessed, caseResult);
+      setIfChanged(setAuditEntries, auditResult);
+      setIfChanged(setOverrides, overrideResult);
     } catch (loadError) {
       setError(loadError instanceof Error ? loadError.message : "Unable to reach the Conductor API.");
     } finally {
@@ -146,7 +147,7 @@ export function LiveInboxConsole() {
 
   return (
     <main className="notion-grid flex min-h-screen bg-background/80">
-      <AppRail active="inbox" escalations={escalations.length} />
+      <AppRail active="inbox" />
 
       <section className="flex min-w-0 flex-1 flex-col overflow-hidden border bg-[#fbfaf6]/95 shadow-[0_1px_1px_rgba(31,35,40,0.04),0_30px_90px_rgba(31,35,40,0.08)]">
         <header className="flex flex-wrap items-center justify-between gap-3 border-b bg-card/78 px-4 py-3 backdrop-blur-xl sm:px-5">
@@ -278,7 +279,7 @@ function MailboxFolders({
   return (
     <aside className="border-t bg-[#f4f2eb]/80 p-3 lg:border-t-0">
       <div className="mb-4 flex items-center gap-2 px-2 text-xs font-semibold uppercase tracking-[0.16em] text-muted-foreground">
-        <Stethoscope className="h-3.5 w-3.5" />
+        <BrandLogoMark className="h-4 w-4 rounded shadow-none" imageClassName="h-3 w-3" />
         Mailboxes
       </div>
       <nav className="space-y-1">

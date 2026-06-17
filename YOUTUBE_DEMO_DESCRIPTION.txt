@@ -1,0 +1,45 @@
+Conductor - AI Intake Manager for Healthcare Contact Centers
+
+This demo shows Conductor, an AI-powered incoming request processing workflow built for the Firstsource / TeleMedik proof of concept. It helps a healthcare contact center automatically receive, classify, prioritize, and route incoming member requests while keeping human oversight, auditability, and PHI protection front and center.
+
+In the walkthrough, I show how the system handles mixed inbound requests in English and Spanish, masks PHI before AI processing, classifies each request with Amazon Bedrock, assigns urgency, and triggers a branch-specific remediation flow for complaints, benefits enquiries, service requests, billing disputes, and urgent clinical escalations.
+
+What this demo covers:
+- AI classification by request type and urgency
+- PHI masking before model calls or operational persistence
+- Branch-specific downstream actions for each request type
+- Human-in-the-loop routing for sensitive, urgent, or low-confidence cases
+- Audit trail, follow-up actions, and operations-ready outputs
+- FastAPI backend + Next.js operations dashboard
+
+Why this matters:
+Manual triage in healthcare contact centers is slow, inconsistent, and hard to audit. Conductor is designed to make request handling faster, more explainable, and safer by combining AI classification with deterministic workflow automation and clear escalation rules.
+
+Key product highlights:
+- Healthcare operations framing instead of a generic support bot
+- Bilingual request handling (English / Spanish)
+- Confidence-aware routing with human review gates
+- Supervisor-only PHI reveal flow with access logging
+- Persistent masked case history in SQLite
+- Live operations board for inbox, escalations, and case outcomes
+
+Timestamps:
+00:00 Problem and demo goal
+00:20 Architecture and PHI masking gateway
+00:45 Inbox intake and AI classification
+01:20 Branch-specific remediation workflows
+02:05 Escalation, audit trail, and supervisor controls
+02:35 Dashboard summary and closing notes
+
+Tech stack:
+FastAPI, Next.js, AWS Bedrock, Amazon Comprehend, Amazon Comprehend Medical, SQLite, Docker Compose, Tailwind CSS
+
+Links:
+Demo repository: [add repo link]
+Supporting README: [add repo README link]
+Summary deck: [add deck link]
+
+Note:
+This prototype uses synthetic sample requests only. It is designed to demonstrate healthcare-safe workflow automation and does not provide diagnosis, treatment, or clinical decision-making.
+
+#HealthcareAI #ContactCenterAutomation #FastAPI
