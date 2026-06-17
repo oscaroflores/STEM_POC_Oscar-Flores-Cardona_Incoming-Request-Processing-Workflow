@@ -7,7 +7,7 @@ import urllib.error
 import urllib.request
 from typing import Any
 
-from models import IncomingRequest
+from models import MaskedIncomingRequest, RawIncomingRequest
 import config
 
 
@@ -33,12 +33,10 @@ def _request_json(path: str, payload: dict[str, Any] | None = None, method: str 
         raise MaskingServiceError(f"PHI masking service unavailable: {exc}") from exc
 
 
-def mask_request(request: IncomingRequest) -> IncomingRequest:
+def mask_request(request: RawIncomingRequest) -> MaskedIncomingRequest:
     """Fail-closed tokenization chokepoint for raw intake."""
-    if request.mask_id:
-        return request
     data = _request_json("/mask", {"request": request.model_dump()}, method="POST")
-    return IncomingRequest(
+    return MaskedIncomingRequest(
         id=request.id,
         channel=str(data["channel"]),
         mask_id=str(data["mask_id"]),

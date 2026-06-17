@@ -13,7 +13,7 @@ import json
 import sqlite3
 from datetime import datetime, timezone
 
-from models import IncomingRequest, ProcessedRequest
+from models import MaskedIncomingRequest, ProcessedRequest, assert_masked_request
 import config
 
 
@@ -162,8 +162,14 @@ def _ensure_column(conn: sqlite3.Connection, table: str, column: str, definition
         conn.execute(f"ALTER TABLE {table} ADD COLUMN {column} {definition}")
 
 
-def seed_inbox(requests: list[IncomingRequest]) -> None:
+def _require_masked(request: MaskedIncomingRequest) -> None:
+    assert_masked_request(request)
+
+
+def seed_inbox(requests: list[MaskedIncomingRequest]) -> None:
     """Persist the demo inbox without overwriting processed state."""
+    for request in requests:
+        _require_masked(request)
     now = _now()
     with _conn() as conn:
         conn.executemany(
@@ -191,8 +197,9 @@ def seed_inbox(requests: list[IncomingRequest]) -> None:
         )
 
 
-def enqueue_request(request: IncomingRequest, source: str = "factory") -> dict:
+def enqueue_request(request: MaskedIncomingRequest, source: str = "factory") -> dict:
     """Add one request to the live inbox without processing it yet."""
+    _require_masked(request)
     now = _now()
     with _conn() as conn:
         existing = conn.execute(
@@ -270,7 +277,8 @@ def inbox_total_count() -> int:
         return conn.execute("SELECT COUNT(*) c FROM inbox_requests").fetchone()["c"]
 
 
-def _upsert_inbox(conn: sqlite3.Connection, request: IncomingRequest, status: str) -> None:
+def _upsert_inbox(conn: sqlite3.Connection, request: MaskedIncomingRequest, status: str) -> None:
+    _require_masked(request)
     now = _now()
     conn.execute(
         """
@@ -307,6 +315,7 @@ def _upsert_inbox(conn: sqlite3.Connection, request: IncomingRequest, status: st
 
 def record(pr: ProcessedRequest) -> None:
     t, r, req = pr.type_decision, pr.remediation, pr.request
+    _require_masked(req)
     with _conn() as conn:
         _upsert_inbox(conn, req, "processed")
         conn.execute(

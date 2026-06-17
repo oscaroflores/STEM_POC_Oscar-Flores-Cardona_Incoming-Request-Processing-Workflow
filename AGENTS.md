@@ -96,6 +96,8 @@ The project has moved beyond the original default suggestion. The current implem
 - Python/FastAPI backend for the workflow API.
 - Internal Python/FastAPI PHI masking microservice in `Submission_Incoming_Request_Processing_Workflow/phi_masking_service/`. It is Docker-network internal only, has no host port, and is reached by the main API through `PHI_MASKING_SERVICE_URL`.
 - AWS-native PHI/PII detection in the masking service: Amazon Comprehend `DetectDominantLanguage` and `DetectPiiEntities` for English/Spanish, plus Amazon Comprehend Medical `DetectPHI` for English clinical PHI. There is no regex fallback.
+- `intake.py` is the approved raw-request boundary. Public intake endpoints and future channels must pass raw requests through `intake.py` or `POST /api/inbox` / `POST /api/process`; direct calls into `audit` or `orchestrator` with raw request text are forbidden and should fail closed.
+- Backend request models are intentionally split into `RawIncomingRequest` for public intake and `MaskedIncomingRequest` for all downstream processing/persistence.
 - Bedrock AI as the only classifier; no deterministic classifier fallback.
 - SQLite operational database using Python's built-in `sqlite3`: durable masked inbox state, current masked case records, ordered branch actions, supervisor overrides, and append-only audit log. It stores `mask_id`, token metadata, and de-identified text only.
 - Separate SQLite PHI vault database owned by the PHI masking microservice: `phi_vault`, `phi_access_log`, and `masking_requests`. Raw token values live only here.
@@ -207,6 +209,8 @@ Before claiming completion:
 - For the database-backed local deployment, run `docker compose up --build` from `Submission_Incoming_Request_Processing_Workflow/` and verify the API at `http://localhost:8000` plus SQLite web at `http://localhost:8080`. Confirm `phi-masker` is healthy internally and has no host port.
 - Run the backend API and the Next.js frontend together.
 - Confirm every intake path reaches the PHI masking service before classification or operational persistence.
+- Confirm raw requests with caller-supplied `mask_id`, `entities`, or `phi` are rejected at public intake endpoints.
+- Confirm direct raw calls to `orchestrator.process_one` and `audit.enqueue_request` fail closed.
 - Confirm `GET /api/masking/health`, `POST /api/masking/resolve`, and `GET /api/phi-access-log` proxy through the main API.
 - Process representative examples for every branch.
 - Confirm Bedrock classifier input contains masked subject/body text only.

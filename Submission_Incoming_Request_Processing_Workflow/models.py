@@ -1,7 +1,7 @@
 from enum import Enum
 from datetime import datetime, timezone
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field
 
 
 class RequestType(str, Enum):
@@ -24,15 +24,34 @@ class Language(str, Enum):
     ES = "es"
 
 
-class IncomingRequest(BaseModel):
+class RawIncomingRequest(BaseModel):
+    """Raw intake payload accepted only at the platform edge."""
+
+    model_config = ConfigDict(extra="forbid")
+
     id: str
     channel: str
-    mask_id: str | None = None
     member_name: str | None = None
     subject: str
     body: str
+
+
+class MaskedIncomingRequest(RawIncomingRequest):
+    """De-identified request after the PHI masking gateway."""
+
+    mask_id: str
     entities: dict = Field(default_factory=dict)
     phi: dict = Field(default_factory=lambda: {"count": 0, "tokens": [], "kinds": {}})
+
+
+def assert_masked_request(request: MaskedIncomingRequest) -> None:
+    if not getattr(request, "mask_id", None):
+        raise ValueError("Request has not passed through the PHI masking gateway: missing mask_id")
+    if not isinstance(getattr(request, "entities", None), dict):
+        raise ValueError("Request has not passed through the PHI masking gateway: invalid entities metadata")
+    phi = getattr(request, "phi", None)
+    if not isinstance(phi, dict) or "count" not in phi:
+        raise ValueError("Request has not passed through the PHI masking gateway: invalid phi metadata")
 
 
 class TypeDecision(BaseModel):
@@ -66,7 +85,7 @@ class RemediationResult(BaseModel):
 
 
 class ProcessedRequest(BaseModel):
-    request: IncomingRequest
+    request: MaskedIncomingRequest
     type_decision: TypeDecision
     remediation: RemediationResult
     processed_at: str = Field(

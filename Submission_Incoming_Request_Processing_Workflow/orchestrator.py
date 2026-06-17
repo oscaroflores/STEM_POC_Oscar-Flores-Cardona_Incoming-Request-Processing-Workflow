@@ -1,10 +1,11 @@
-from models import IncomingRequest, ProcessedRequest
+from models import MaskedIncomingRequest, ProcessedRequest, assert_masked_request
 import audit
 import branches
 import classifier
 
 
-def process_one(request: IncomingRequest) -> ProcessedRequest:
+def process_one(request: MaskedIncomingRequest) -> ProcessedRequest:
+    assert_masked_request(request)
     type_decision = classifier.classify(f"{request.subject}\n\n{request.body}")
     type_decision.key_entities = {
         **(type_decision.key_entities or {}),

@@ -86,6 +86,27 @@ request generation, but it does not classify or remediate. It only writes
 healthcare-safe synthetic inbox items through `POST /api/inbox`; the normal
 orchestrator, safety gates, branch logic, and audit trail handle them afterward.
 
+## Intake boundary
+
+The PHI masking gateway is the single point of entry for request content. Public
+intake endpoints accept a strict raw request schema with no `mask_id`, `entities`,
+or `phi` fields; those fields are created only by the masking service.
+
+Approved raw intake paths:
+
+| Source | Entry point | Behavior |
+| --- | --- | --- |
+| Sample inbox seed/reset | `intake.seed_raw_requests()` | Masks each raw sample before writing `inbox_requests`. |
+| Request factory | `POST /api/inbox` | Factory posts raw synthetic requests; API masks before enqueue. |
+| Create Request page | `POST /api/process` | Form posts raw request; API masks before classification. |
+| Future channels | `intake.py` or the public intake endpoints | Must mask before calling `audit` or `orchestrator`. |
+
+Downstream modules (`audit`, `orchestrator`, classifier, branches, SSE, UI) use
+`MaskedIncomingRequest` only. They also perform runtime guard checks and fail
+closed if a raw request reaches them directly. This prevents a future channel
+from accidentally bypassing the PHI service by calling persistence or processing
+helpers directly.
+
 ## SQLite databases
 
 Conductor uses local SQLite storage through Python's built-in `sqlite3` module —

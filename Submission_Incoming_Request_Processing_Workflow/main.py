@@ -26,10 +26,11 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
 
-from models import IncomingRequest
+from models import MaskedIncomingRequest, RawIncomingRequest
 import orchestrator
 import audit
 import config
+import intake
 import masking_client
 
 app = FastAPI(title="Conductor — AI Intake Manager", version="1.0.0")
@@ -47,31 +48,20 @@ app.add_middleware(
 def _startup() -> None:
     audit.init_db()
     if audit.inbox_total_count() == 0:
-        audit.seed_inbox(_mask_all(_load_sample_inbox()))
+        intake.seed_raw_requests(_load_sample_inbox())
 
 
-def _load_sample_inbox() -> list[IncomingRequest]:
+def _load_sample_inbox() -> list[RawIncomingRequest]:
     with open(config.SAMPLE_DATA_PATH, encoding="utf-8") as fh:
-        return [IncomingRequest(**item) for item in json.load(fh)]
+        return [RawIncomingRequest(**item) for item in json.load(fh)]
 
 
-def _load_inbox() -> list[IncomingRequest]:
+def _load_inbox() -> list[MaskedIncomingRequest]:
     rows = audit.inbox_entries()
     if not rows and audit.inbox_total_count() == 0:
-        audit.seed_inbox(_mask_all(_load_sample_inbox()))
+        intake.seed_raw_requests(_load_sample_inbox())
         rows = audit.inbox_entries()
-    return [IncomingRequest(**item) for item in rows]
-
-
-def _mask_or_503(request: IncomingRequest) -> IncomingRequest:
-    try:
-        return masking_client.mask_request(request)
-    except masking_client.MaskingServiceError as exc:
-        raise HTTPException(status_code=503, detail=str(exc)) from exc
-
-
-def _mask_all(requests: list[IncomingRequest]) -> list[IncomingRequest]:
-    return [_mask_or_503(request) for request in requests]
+    return [MaskedIncomingRequest(**item) for item in rows]
 
 
 @app.get("/health")
@@ -90,10 +80,12 @@ def inbox(role: str = "agent") -> list[dict]:
 
 
 @app.post("/api/inbox", status_code=201)
-def enqueue_inbox(request: IncomingRequest) -> dict:
+def enqueue_inbox(request: RawIncomingRequest) -> dict:
     """Queue one generated/manual request without processing it immediately."""
     try:
-        return audit.enqueue_request(_mask_or_503(request))
+        return intake.enqueue_raw_request(request)
+    except masking_client.MaskingServiceError as exc:
+        raise HTTPException(status_code=503, detail=str(exc)) from exc
     except ValueError as exc:
         raise HTTPException(status_code=409, detail=str(exc)) from exc
 
@@ -109,9 +101,16 @@ def overrides(role: str = "agent") -> dict[str, str]:
 
 
 @app.post("/api/process")
-def process(request: IncomingRequest) -> dict:
+def process(request: RawIncomingRequest) -> dict:
     """Process a single ad-hoc request (e.g. typed live into the UI)."""
-    return orchestrator.process_one(_mask_or_503(request)).model_dump()
+    return _process_or_503(request).model_dump()
+
+
+def _process_or_503(request: RawIncomingRequest):
+    try:
+        return intake.process_raw_request(request)
+    except masking_client.MaskingServiceError as exc:
+        raise HTTPException(status_code=503, detail=str(exc)) from exc
 
 
 @app.get("/api/process-stream")
@@ -208,5 +207,8 @@ def override(o: Override) -> dict:
 @app.post("/api/reset")
 def reset() -> dict:
     audit.reset()
-    audit.seed_inbox(_mask_all(_load_sample_inbox()))
+    try:
+        intake.seed_raw_requests(_load_sample_inbox())
+    except masking_client.MaskingServiceError as exc:
+        raise HTTPException(status_code=503, detail=str(exc)) from exc
     return {"status": "database reset and sample inbox reseeded"}

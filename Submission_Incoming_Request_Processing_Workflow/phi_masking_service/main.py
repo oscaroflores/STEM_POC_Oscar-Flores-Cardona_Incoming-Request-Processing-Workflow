@@ -18,7 +18,7 @@ from datetime import datetime, timezone
 from typing import Any
 
 from fastapi import FastAPI, HTTPException
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field
 
 
 AWS_REGION = os.getenv("AWS_REGION", "us-east-1")
@@ -53,6 +53,8 @@ app = FastAPI(title="Conductor PHI Masking Gateway", version="1.0.0")
 
 
 class RawRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
     id: str
     channel: str
     member_name: str | None = None

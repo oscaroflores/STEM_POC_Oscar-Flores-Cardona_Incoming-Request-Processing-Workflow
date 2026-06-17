@@ -22,7 +22,7 @@ from botocore.config import Config as BotoConfig
 import boto3
 
 import config
-from models import IncomingRequest, RequestType
+from models import RawIncomingRequest, RequestType
 
 
 DEFAULT_CATEGORY_WEIGHTS = {
@@ -165,7 +165,7 @@ def _generate_request(
     channel: str,
     variation_seed: int,
     request_id: str,
-) -> IncomingRequest:
+) -> RawIncomingRequest:
     prompt = f"""Generate one synthetic inbound request.
 
 Category: {category}
@@ -184,7 +184,7 @@ The generated request id will be {request_id}; do not include it in the JSON.
     )
     raw = resp["output"]["message"]["content"][0]["text"]
     data = _extract_json(raw)
-    return IncomingRequest(
+    return RawIncomingRequest(
         id=request_id,
         channel=channel,
         member_name=data.get("member_name"),
@@ -193,7 +193,7 @@ The generated request id will be {request_id}; do not include it in the JSON.
     )
 
 
-def _post_request(api_base_url: str, request: IncomingRequest) -> dict:
+def _post_request(api_base_url: str, request: RawIncomingRequest) -> dict:
     payload = json.dumps(request.model_dump()).encode("utf-8")
     http_request = urllib.request.Request(
         f"{api_base_url.rstrip('/')}/api/inbox",
