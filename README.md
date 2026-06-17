@@ -1,0 +1,414 @@
+# Conductor — AI Intake Manager for Healthcare Contact Centers
+
+**FirstSource / TeleMedik POC — Incoming Request Processing Workflow**
+Oscar Flores Cardona
+
+Conductor is an autonomous "AI manager" for a healthcare contact center inbox.
+It receives mixed inbound member requests (in Spanish or English), classifies
+each by **type** and **urgency**, and routes it to the correct team with a
+complete, branch-specific handoff package — while refusing to act on anything
+clinical or anything it isn't confident about, sending those to a human instead.
+
+The intake path now includes an internal **PHI Masking Gateway** microservice:
+raw member identifiers are tokenized before they enter the workflow database or
+the Bedrock classifier. The classifier, branch engine, audit log, SSE payloads,
+and UI operate on de-identified text such as `[NAME-1]` and `[ACCT-1]`; raw
+values live only in the separate PHI vault database and can be resolved only by
+authorized roles with an access-log entry.
+
+> **Design thesis: _AI reasons, rules act._**
+> The model does exactly one job — read a request and emit a structured
+> request type. A deterministic workflow engine does everything else: routing, drafting,
+> logging. That separation is what makes every automated action explainable,
+> auditable, and safe — the qualities a healthcare operation actually needs.
+
+---
+
+## Why this shape (and not a chatbot)
+
+The AI manager **routes and prepares** work; it does **not** resolve requests
+itself — exactly as a real triage manager hands a billing dispute to the billing
+team rather than settling it. The value is consistent, auditable, safe triage at
+volume, with uncertainty made visible and humans kept in control.
+
+Two safety gates can override the manager's routing:
+
+1. **Clinical gate** — any request mentioning symptoms, medication, or anything
+   needing clinical decision-making is never auto-resolved or routed to a standard
+   queue. It goes to a human supervisor with a neutral, non-clinical
+   acknowledgement. The AI never gives medical advice.
+2. **Confidence gate** — any classification below the configured threshold
+   (default 70%) is routed to a human, with the uncertainty shown explicitly.
+
+## Branches (each is a distinct, multi-step remediation)
+
+| Type | Urgency | Team | Steps |
+| --- | --- | --- | --- |
+| Complaint | High | Senior Resolution | acknowledge · assign · priority log · 2h follow-up |
+| Benefits Enquiry | Low | Benefits & Eligibility | classify · holding draft · assign · log pending |
+| Service Request | Medium | Scheduling & Service | extract details · assign · confirmation draft · SLA timer |
+| Billing Dispute | Medium/High | Billing & Claims | extract account · assign · acknowledgement · follow-up flag |
+| Clinical / Urgent | Critical | Human Review | flag human · neutral ack · notify supervisor · pause auto-routing |
+
+All draft responses are **bilingual (ES/EN)**, template-driven, and free of
+clinical or treatment language — consistent and compliant by construction.
+
+## Architecture
+
+```mermaid
+flowchart TD
+    source["Sample inbox / API / request factory"] --> mask["PHI Masking Gateway<br/>AWS Comprehend + Comprehend Medical"]
+    mask --> vault[("PHI vault SQLite<br/>raw values only here")]
+    mask --> inbox["Masked inbox queue"]
+    inbox --> orchestrator["Orchestrator<br/>autonomous, one request at a time"]
+
+    orchestrator --> classify["classify()<br/>Bedrock AI only<br/>masked subject/body"]
+    classify --> decision["type_decision<br/>type, urgency, confidence<br/>language, clinical_flag, phi_present<br/>rationale, key_entities"]
+
+    decision --> gates{"Safety gates<br/>clinical or low confidence?"}
+    gates -->|Yes| human["Force human review"]
+    gates -->|No| remediate["remediate()<br/>branch-specific handoff package"]
+
+    human --> audit["audit.record()<br/>SQLite case store + append-only audit log"]
+    remediate --> outputs["Team routing, ordered actions<br/>bilingual draft, SLA/follow-up"]
+    outputs --> audit
+```
+
+The classifier has one implementation behind the `type_decision` contract: a
+live **Bedrock** call (`boto3` Converse API, model-agnostic, structured JSON).
+AI classifies every request, as the brief requires. If the model is unavailable
+or returns invalid output, the API surfaces the failure instead of substituting
+keyword heuristics. That keeps classification provenance honest for the demo and
+for audit review.
+
+The optional request factory uses the same Bedrock integration for synthetic
+request generation, but it does not classify or remediate. It only writes
+healthcare-safe synthetic inbox items through `POST /api/inbox`; the normal
+orchestrator, safety gates, branch logic, and audit trail handle them afterward.
+
+## Intake boundary
+
+The PHI masking gateway is the single point of entry for request content. Public
+intake endpoints accept a strict raw request schema with no `mask_id`, `entities`,
+or `phi` fields; those fields are created only by the masking service.
+
+Approved raw intake paths:
+
+| Source | Entry point | Behavior |
+| --- | --- | --- |
+| Sample inbox seed/reset | `intake.seed_raw_requests()` | Masks each raw sample before writing `inbox_requests`. |
+| Request factory | `POST /api/inbox` | Factory posts raw synthetic requests; API masks before enqueue. |
+| Create Request page | `POST /api/process` | Form posts raw request; API masks before classification. |
+| Future channels | `intake.py` or the public intake endpoints | Must mask before calling `audit` or `orchestrator`. |
+
+Downstream modules (`audit`, `orchestrator`, classifier, branches, SSE, UI) use
+`MaskedIncomingRequest` only. They also perform runtime guard checks and fail
+closed if a raw request reaches them directly. This prevents a future channel
+from accidentally bypassing the PHI service by calling persistence or processing
+helpers directly.
+
+## SQLite databases
+
+Conductor uses local SQLite storage through Python's built-in `sqlite3` module —
+no external database service or ORM is required for the demo. There are now two
+separate databases by design:
+
+| Database | Owner | Purpose |
+| --- | --- | --- |
+| Operational DB | Main Conductor API | Masked inbox, cases, branch actions, overrides, and audit trail. No raw member identifiers. |
+| PHI vault DB | Internal PHI masking service | Raw token values keyed by `mask_id` plus PHI access log. |
+
+The operational database file defaults to `conductor_audit.db` and can be moved
+with `CONDUCTOR_DB_PATH`.
+
+Persisted tables:
+
+| Table | Purpose |
+| --- | --- |
+| `inbox_requests` | Durable sample/ad-hoc inbox items and queue status. |
+| `cases` | One current operational case record per processed request. |
+| `case_actions` | Ordered branch-specific downstream actions for each case. |
+| `case_overrides` | Supervisor override action and note history. |
+| `audit_log` | Append-only compliance trail for every processing run. |
+
+PHI vault tables, owned by the masking service:
+
+| Table | Purpose |
+| --- | --- |
+| `phi_vault` | `(mask_id, token) -> original value`; the only place raw identifiers are stored. |
+| `phi_access_log` | Granted and denied resolution attempts with role, reason, and timestamp. |
+| `masking_requests` | Demo-safe masking counts by request and token kind. |
+
+This lets the operations dashboard, processed case board, escalation queue, and
+management override notes survive a browser refresh while preserving the
+append-only audit record needed for review.
+
+## Run it
+
+AI classification through Bedrock and AWS-native PHI detection are required.
+Configure AWS credentials with access to Bedrock, Comprehend, and Comprehend
+Medical. For local non-Docker development, start the internal masking service in
+one terminal and the workflow API in another:
+
+```bash
+cd Submission_Incoming_Request_Processing_Workflow
+pip install -r requirements.txt
+export AWS_REGION=us-east-1
+export CONDUCTOR_PHI_DB_PATH=./phi_vault.db
+uvicorn phi_masking_service.main:app --reload --port 8100
+```
+
+```bash
+cd Submission_Incoming_Request_Processing_Workflow
+export AWS_REGION=us-east-1
+export CONDUCTOR_MODEL_ID=amazon.nova-lite-v1:0   # or claude-3-5-haiku, deepseek
+export PHI_MASKING_SERVICE_URL=http://localhost:8100
+uvicorn main:app --reload --port 8000
+```
+
+Cheap, fast, JSON-reliable models are preferred — the model's only job is the
+structured request type, so classification reliability matters more than raw power.
+Bedrock model access must be enabled in your account/region.
+
+Required IAM actions for masking:
+
+| Service | Action |
+| --- | --- |
+| Amazon Comprehend | `comprehend:DetectDominantLanguage` |
+| Amazon Comprehend | `comprehend:DetectPiiEntities` |
+| Amazon Comprehend Medical | `comprehendmedical:DetectPHI` |
+
+### Run backend + SQLite in Docker
+
+For local deployment, the preferred path is Docker Compose. The stack starts the
+internal PHI masking service first, then the FastAPI workflow backend. The PHI
+service is not exposed on a host port; the main API reaches it through Docker
+networking at `http://phi-masker:8100` and proxies demo-safe endpoints under
+`/api/masking/*`.
+
+The workflow backend persists masked operational state to
+`data/db/conductor_audit.db`. The PHI masking service persists its separate vault
+to `data/phi-db/phi_vault.db`. Only the operational database is mounted in the
+SQLite web UI; the PHI vault contains raw values and is intentionally not exposed
+through the browser helper.
+
+Configure AWS credentials in your shell or use an AWS profile from `~/.aws`:
+
+```bash
+cd Submission_Incoming_Request_Processing_Workflow
+export AWS_REGION=us-east-1
+export AWS_PROFILE=default
+export CONDUCTOR_MODEL_ID=amazon.nova-lite-v1:0
+docker compose up --build
+```
+
+Services:
+
+| Service | URL | Purpose |
+| --- | --- | --- |
+| FastAPI backend | `http://localhost:8000` | Workflow API, Bedrock classifier, SQLite owner. |
+| PHI masking service | internal only | AWS PHI/PII detection, token vault, role-gated resolution API. |
+| SQLite web UI | `http://localhost:8080` | Inspect `inbox_requests`, `cases`, `case_actions`, `case_overrides`, and `audit_log`. |
+
+The database persists on the host at:
+
+```text
+data/db/conductor_audit.db
+data/phi-db/phi_vault.db
+```
+
+Reset the local demo database through the API:
+
+```bash
+curl -X POST http://localhost:8000/api/reset
+```
+
+### Opt-in request factory
+
+The request factory is a separate worker microservice that creates synthetic
+healthcare contact-center requests with Bedrock and queues them into the same
+inbox used by the operations UI. It is opt-in so the controlled sample demo does
+not change unless you explicitly start it:
+
+```bash
+docker compose --profile factory up --build
+```
+
+Factory behavior:
+
+- Code chooses the request category, language, and inbound channel with a seeded RNG.
+- Bedrock writes the actual synthetic member request for those chosen attributes.
+- The worker posts to `POST /api/inbox`; it never writes SQLite directly.
+- The existing live board and `GET /api/process-stream` process generated items
+  through the same classifier, remediation branches, and audit trail.
+
+Useful factory environment variables:
+
+| Variable | Default | Purpose |
+| --- | --- | --- |
+| `REQUEST_FACTORY_SEED` | `20260616` | Seed for category/language selection. |
+| `REQUEST_FACTORY_MIN_INTERVAL_SECONDS` | `4` | Minimum random delay between generated requests. |
+| `REQUEST_FACTORY_MAX_INTERVAL_SECONDS` | `20` | Maximum random delay between generated requests. |
+| `REQUEST_FACTORY_INTERVAL_SECONDS` | unset | Optional fixed-delay override; when set, random min/max timing is ignored. |
+| `REQUEST_FACTORY_MAX_REQUESTS` | `12` | Number to generate; `0` means run continuously. |
+| `REQUEST_FACTORY_MODEL_ID` | `CONDUCTOR_MODEL_ID` | Optional separate Bedrock model for generation. |
+| `REQUEST_FACTORY_CATEGORY_WEIGHTS` | built-in balanced mix | Comma list such as `complaint=2,benefits_enquiry=3,service_request=3,billing_dispute=2,clinical_urgent=1`. |
+| `REQUEST_FACTORY_LANGUAGE_WEIGHTS` | `en=1,es=1` | Comma list such as `en=1,es=2`. |
+| `REQUEST_FACTORY_CHANNEL_WEIGHTS` | `email=2,inbox=2,web_form=1` | Comma list for simulated source/channel mix. |
+
+Example: generate 25 mostly Spanish requests, with 5-12 seconds between each:
+
+```bash
+REQUEST_FACTORY_MAX_REQUESTS=25 \
+REQUEST_FACTORY_MIN_INTERVAL_SECONDS=5 \
+REQUEST_FACTORY_MAX_INTERVAL_SECONDS=12 \
+REQUEST_FACTORY_LANGUAGE_WEIGHTS=en=1,es=3 \
+REQUEST_FACTORY_CHANNEL_WEIGHTS=email=2,inbox=2,web_form=1 \
+docker compose --profile factory up --build
+```
+
+For a fixed interval instead of a random range, set
+`REQUEST_FACTORY_INTERVAL_SECONDS` explicitly.
+
+If you prefer AWS access keys instead of a profile, export
+`AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY`, and optional `AWS_SESSION_TOKEN`
+before running Compose. Avoid editing rows in SQLite web while the SSE demo is
+actively processing requests.
+
+When using an AWS SSO profile, Compose mounts `~/.aws` read-write into the API
+and request factory containers so `botocore` can refresh files under
+`~/.aws/sso/cache`. If Bedrock calls fail with a read-only SSO cache error,
+restart the stack after confirming this mount is not marked `:ro`.
+
+Endpoints:
+
+| Endpoint | Purpose |
+| --- | --- |
+| `GET /health` | liveness + active classifier mode/model id |
+| `GET /api/inbox` | the seeded bilingual sample inbox |
+| `POST /api/inbox` | queue one generated/manual request for later processing |
+| `GET /api/cases` | persisted processed case records |
+| `GET /api/overrides` | latest management override note per case |
+| `GET /api/process-stream` | **SSE** — autonomously drain the inbox, live |
+| `POST /api/process` | process one ad-hoc request |
+| `GET /api/dashboard` | operations summary (volume, urgency mix, escalations) |
+| `GET /api/audit` | full audit trail, most recent first |
+| `GET /api/masking/health` | proxied PHI masking service health and token counts |
+| `POST /api/masking/resolve` | role-gated token resolution; always audited by the masking service |
+| `GET /api/phi-access-log` | PHI reveal/denial log, most recent first |
+| `POST /api/override` | management override of a case |
+| `POST /api/reset` | reset demo database state and reseed the sample inbox |
+
+## Next.js operations UI
+
+The `frontend/` folder contains the operations console for the demo. It is a
+standalone Next.js App Router application styled with local shadcn/ui-style
+components, a Notion-like operations workspace layout, and restrained
+TeleMedik-inspired teal/blue healthcare accents.
+
+Run the frontend after the FastAPI backend is available:
+
+```bash
+cd frontend
+npm install
+NEXT_PUBLIC_API_BASE_URL=http://localhost:8000 npm run dev
+```
+
+UI coverage:
+
+- Live inbox board: **Incoming → Processing → Outcome**, driven by
+  `GET /api/process-stream` SSE.
+- Per-request detail sheet showing classification, urgency, confidence,
+  language, rationale, branch actions, assigned team, SLA/follow-up, generated
+  draft response, and escalation reason.
+- Masking Gateway status chip showing de-identification status and total vaulted
+  token count.
+- Per-request PHI badge showing how many tokens were vaulted before processing.
+- Demo role switcher (`Agent` default, `Supervisor`) with supervisor-only PHI
+  reveal in the detail sheet. Reveals require a reason, call
+  `POST /api/masking/resolve`, substitute values locally for review, and write a
+  PHI access-log row. Stored drafts and audit rows remain tokenized.
+- Operations dashboard with processed volume, urgency mix, type mix, pending
+  human review count, average confidence, backend health, and AI classifier mode.
+- Escalations / needs-review queue for clinical and low-confidence cases.
+- Management override control calling `POST /api/override`.
+- Ad-hoc request form calling `POST /api/process`, including demo shortcuts for
+  Spanish benefits, clinical escalation, and billing dispute examples.
+
+## AI classification requirement
+
+There is no offline deterministic classifier. Processing requires Bedrock model
+access in the configured AWS account and region. Model errors, credential issues,
+or invalid JSON responses should be treated as operational failures to fix before
+the demo, not silently hidden behind heuristic routing.
+
+## Configuration
+
+Core workflow tunables live in `config.py` (env-overridable):
+`CONDUCTOR_CONF_THRESHOLD`, `CONDUCTOR_PROCESS_DELAY` (demo pacing),
+`CONDUCTOR_MODEL_ID`, `CONDUCTOR_LLM_TIMEOUT`, `CONDUCTOR_DB_PATH`,
+`PHI_MASKING_SERVICE_URL`, `CONDUCTOR_MASKING_TIMEOUT`, and
+`CONDUCTOR_MASK_MIN_SCORE`.
+
+The PHI masking service also reads `CONDUCTOR_PHI_DB_PATH` for its separate vault
+database. `CONDUCTOR_MASK_MIN_SCORE` defaults to `0.5`, intentionally biased
+toward masking when AWS detector confidence is uncertain.
+
+The request factory is configured directly through environment variables in
+`docker-compose.yml`: `REQUEST_FACTORY_SEED`, random interval min/max, optional
+fixed interval override, max generated requests, category weights, language
+weights, and optional separate generation model id.
+
+## PHI masking limitations and hardening notes
+
+- Comprehend Medical `DetectPHI` is English-only. Spanish requests still use
+  Comprehend PII detection for names, IDs, phones, addresses, and emails; Spanish
+  clinical-term PHI via Translate plus offset mapping is a next-step item.
+- The service fails closed. If AWS detection or the PHI vault write fails, intake
+  rejects the request instead of passing raw text downstream.
+- The role switcher is a demo control, not real authentication. Production would
+  enforce roles through an identity provider and service-to-service auth.
+- The vault is isolated in its own database table and service. Production should
+  encrypt `phi_vault.value` with KMS or envelope encryption and use managed audit
+  retention.
+- The masking service is intentionally internal-only in Docker Compose. It can be
+  extracted to its own deployable service without changing the Conductor API
+  contract.
+
+## Verification status
+
+The deterministic remediation pipeline (branches, gates, audit, SSE envelope)
+has been verified structurally in the local build environment. Full end-to-end
+request processing now requires live Bedrock plus Comprehend/Comprehend Medical
+credentials. Before recording the demo, run the 12-request sample inbox with the
+target model and confirm all five branches fire, both languages classify
+correctly, both safety gates trigger (clinical: REQ-1005/1011; low-confidence:
+REQ-1008), the SSE stream emits per-request decisions + live dashboard, and the
+audit log is written and queryable.
+
+Masking-specific verification:
+
+- `docker compose up --build` starts `phi-masker` with no host port and the API
+  proxies `GET /api/masking/health`.
+- Spanish sample requests such as REQ-1001/1007 show masked names and account
+  tokens before classification.
+- English clinical samples such as REQ-1011 pass through Comprehend Medical on
+  the masking service path.
+- The Bedrock classifier prompt contains masked subject/body text only.
+- `data/db/conductor_audit.db` contains masked request text and `mask_id`; raw
+  values exist only in `data/phi-db/phi_vault.db`.
+- `POST /api/masking/resolve` with `role=agent` is denied and logged; the same
+  call with `role=supervisor` and a reason returns values and logs the grant.
+
+## Sample data
+
+`data/sample_requests.json` — 12 synthetic bilingual requests covering
+every branch plus clinical and low-confidence edge cases. No real or proprietary
+patient data is used.
+
+---
+
+### Remaining final artifacts
+- **Five-slide summary deck** + 3-minute demo script.
+- Clean screenshots or saved sample outputs from the operations UI once the
+  final demo run is recorded.
